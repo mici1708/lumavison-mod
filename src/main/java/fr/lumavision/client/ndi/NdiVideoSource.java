@@ -30,6 +30,7 @@ public final class NdiVideoSource implements VideoSource {
     private volatile boolean running;
     private volatile boolean active = true;
     private long lastConvertedFrameMs;
+    private long lastCaptureErrorLogMs;
 
     public NdiVideoSource(String sourceName, int targetWidth, int targetHeight) {
         this.sourceName = sourceName;
@@ -122,7 +123,7 @@ public final class NdiVideoSource implements VideoSource {
                     }
                 } catch (Throwable throwable) {
                     if (running) {
-                        LumaVisionMod.LOGGER.error("NDI capture error for '{}'", sourceName, throwable);
+                        handleCaptureError(throwable);
                     }
                 }
             }
@@ -131,6 +132,34 @@ public final class NdiVideoSource implements VideoSource {
                 ndiFrame.close();
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    private void handleCaptureError(Throwable throwable) {
+        long nowMs = System.currentTimeMillis();
+        boolean unknownFrameType = throwable instanceof IllegalArgumentException
+                && throwable.getMessage() != null
+                && throwable.getMessage().startsWith("Unknown frame type id:");
+        if (nowMs - lastCaptureErrorLogMs >= 5000L) {
+            lastCaptureErrorLogMs = nowMs;
+            if (unknownFrameType) {
+                LumaVisionMod.LOGGER.warn(
+                        "NDI source '{}' returned an unsupported frame type from the NDI runtime ({})",
+                        sourceName,
+                        throwable.getMessage()
+                );
+            } else {
+                LumaVisionMod.LOGGER.error("NDI capture error for '{}'", sourceName, throwable);
+            }
+        }
+        sleepAfterCaptureError(unknownFrameType ? 100L : 250L);
+    }
+
+    private static void sleepAfterCaptureError(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
