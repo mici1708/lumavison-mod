@@ -3,6 +3,7 @@ package fr.lumavision.blockentity;
 import fr.lumavision.registry.ModBlockEntities;
 import fr.lumavision.screen.ScreenDisplaySettings;
 import fr.lumavision.screen.ScreenGroupMembership;
+import fr.lumavision.screen.WallPlane;
 import fr.lumavision.video.VideoSourceDescriptor;
 import fr.lumavision.video.VideoSourceDescriptors;
 import net.minecraft.core.BlockPos;
@@ -14,6 +15,7 @@ import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
@@ -88,6 +90,29 @@ public class LedScreenBlockEntity extends BlockEntity {
 
     public boolean isGroupOrigin() {
         return worldPosition.equals(groupMembership.groupOrigin());
+    }
+
+    @Override
+    public AABB getRenderBoundingBox() {
+        if (!isGroupOrigin() || !groupMembership.isMerged()) {
+            return super.getRenderBoundingBox();
+        }
+
+        WallPlane plane = WallPlane.forFacing(getFacing());
+        BlockPos minCorner = groupMembership.groupOrigin();
+        BlockPos maxCorner = plane.stepVertical(
+                plane.stepHorizontal(minCorner, groupMembership.gridWidth() - 1),
+                groupMembership.gridHeight() - 1
+        );
+
+        int minX = Math.min(minCorner.getX(), maxCorner.getX());
+        int minY = Math.min(minCorner.getY(), maxCorner.getY());
+        int minZ = Math.min(minCorner.getZ(), maxCorner.getZ());
+        int maxX = Math.max(minCorner.getX(), maxCorner.getX()) + 1;
+        int maxY = Math.max(minCorner.getY(), maxCorner.getY()) + 1;
+        int maxZ = Math.max(minCorner.getZ(), maxCorner.getZ()) + 1;
+
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(0.125D);
     }
 
     /**
