@@ -3,6 +3,7 @@ package fr.lumavision.client.ndi;
 import fr.lumavision.LumaVisionMod;
 import fr.lumavision.client.video.TestPatternVideoSource;
 import fr.lumavision.config.ModConfig;
+import fr.lumavision.video.VideoFrame;
 import fr.lumavision.video.VideoSource;
 import fr.lumavision.video.VideoSourceDescriptor;
 import fr.lumavision.video.VideoSourceType;
@@ -14,10 +15,13 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
 
-import org.jetbrains.annotations.Nullable;
-
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * NDI media provider backed by Devolay discovery and receivers.
@@ -26,6 +30,8 @@ import java.util.List;
 public final class NdiProvider implements VideoSourceProvider {
 
     public static final NdiProvider INSTANCE = new NdiProvider();
+
+    private final Map<String, SharedNdiSource> sharedSources = new HashMap<>();
 
     private NdiProvider() {
     }
@@ -88,6 +94,7 @@ public final class NdiProvider implements VideoSourceProvider {
     @Override
     public void stop() {
         NdiDiscoveryService.getInstance().shutdown();
+        clearSharedSources();
     }
 
     @Override
@@ -178,7 +185,7 @@ public final class NdiProvider implements VideoSourceProvider {
         }
 
         try {
-            return new NdiVideoSource(descriptor.payload(), targetWidth, targetHeight);
+            return acquireSharedSource(descriptor.payload(), targetWidth, targetHeight);
         } catch (Throwable throwable) {
             LumaVisionMod.LOGGER.warn(
                     "NDI source '{}' unavailable, using test pattern",
@@ -186,6 +193,136 @@ public final class NdiProvider implements VideoSourceProvider {
                     throwable
             );
             return new TestPatternVideoSource(targetWidth, targetHeight);
+        }
+    }
+
+    private synchronized VideoSource acquireSharedSource(String sourceName, int targetWidth, int targetHeight) {
+        String key = sharedSourceKey(sourceName, targetWidth, targetHeight);
+        SharedNdiSource shared = sharedSources.get(key);
+        if (shared == null) {
+            shared = new SharedNdiSource(key, new NdiVideoSource(sourceName, targetWidth, targetHeight));
+            sharedSources.put(key, shared);
+        }
+        return shared.retain();
+    }
+
+    private synchronized void releaseSharedSource(SharedNdiSource shared, SharedNdiLease lease) {
+        if (!shared.release(lease)) {
+            return;
+        }
+        if (sharedSources.remove(shared.key(), shared)) {
+            shared.disposeDelegate();
+        }
+    }
+
+    private synchronized void clearSharedSources() {
+        for (SharedNdiSource shared : sharedSources.values()) {
+            shared.disposeDelegate();
+        }
+        sharedSources.clear();
+    }
+
+    private static String sharedSourceKey(String sourceName, int targetWidth, int targetHeight) {
+        return sourceName + "@" + targetWidth + "x" + targetHeight;
+    }
+
+    private final class SharedNdiSource {
+        private final String key;
+        private final VideoSource delegate;
+        private final Set<SharedNdiLease> leases = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        private SharedNdiSource(String key, VideoSource delegate) {
+            this.key = key;
+            this.delegate = delegate;
+        }
+
+        private String key() {
+            return key;
+        }
+
+        private SharedNdiLease retain() {
+            SharedNdiLease lease = new SharedNdiLease(this);
+            leases.add(lease);
+            updateDelegateActive();
+            return lease;
+        }
+
+        private boolean release(SharedNdiLease lease) {
+            leases.remove(lease);
+            updateDelegateActive();
+            return leases.isEmpty();
+        }
+
+        private void setLeaseActive(SharedNdiLease lease, boolean active) {
+            if (!leases.contains(lease)) {
+                return;
+            }
+            lease.active = active;
+            updateDelegateActive();
+        }
+
+        private void updateDelegateActive() {
+            for (SharedNdiLease lease : leases) {
+                if (lease.active) {
+                    delegate.setActive(true);
+                    return;
+                }
+            }
+            delegate.setActive(false);
+        }
+
+        private void disposeDelegate() {
+            delegate.dispose();
+        }
+    }
+
+    private final class SharedNdiLease implements VideoSource {
+        private final SharedNdiSource shared;
+        private boolean active = true;
+        private boolean disposed;
+
+        private SharedNdiLease(SharedNdiSource shared) {
+            this.shared = shared;
+        }
+
+        @Override
+        public int getWidth() {
+            return shared.delegate.getWidth();
+        }
+
+        @Override
+        public int getHeight() {
+            return shared.delegate.getHeight();
+        }
+
+        @Override
+        public void tick() {
+            shared.delegate.tick();
+        }
+
+        @Override
+        public void setActive(boolean active) {
+            synchronized (NdiProvider.this) {
+                if (!disposed) {
+                    shared.setLeaseActive(this, active);
+                }
+            }
+        }
+
+        @Override
+        public VideoFrame getCurrentFrame() {
+            return shared.delegate.getCurrentFrame();
+        }
+
+        @Override
+        public void dispose() {
+            synchronized (NdiProvider.this) {
+                if (disposed) {
+                    return;
+                }
+                disposed = true;
+                releaseSharedSource(shared, this);
+            }
         }
     }
 
