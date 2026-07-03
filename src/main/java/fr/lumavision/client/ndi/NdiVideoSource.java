@@ -29,7 +29,6 @@ public final class NdiVideoSource implements VideoSource {
     private Thread captureThread;
     private volatile boolean running;
     private volatile boolean active = true;
-    private volatile int frameRateLimit;
     private long lastConvertedFrameMs;
 
     public NdiVideoSource(String sourceName, int targetWidth, int targetHeight) {
@@ -61,11 +60,6 @@ public final class NdiVideoSource implements VideoSource {
     @Override
     public void setActive(boolean active) {
         this.active = active;
-    }
-
-    @Override
-    public void setFrameRateLimit(int maxFramesPerSecond) {
-        this.frameRateLimit = Math.max(0, maxFramesPerSecond);
     }
 
     @Override
@@ -144,23 +138,11 @@ public final class NdiVideoSource implements VideoSource {
         if (!active) {
             return false;
         }
-        int maxFramesPerSecond = effectiveFrameRateLimit();
+        int maxFramesPerSecond = ModConfig.MAX_NDI_CAPTURE_FRAMES_PER_SECOND.get();
         if (maxFramesPerSecond <= 0 || lastConvertedFrameMs <= 0) {
             return true;
         }
         long minIntervalMs = Math.max(1L, 1000L / maxFramesPerSecond);
         return System.currentTimeMillis() - lastConvertedFrameMs >= minIntervalMs;
-    }
-
-    private int effectiveFrameRateLimit() {
-        int configLimit = ModConfig.MAX_NDI_CAPTURE_FRAMES_PER_SECOND.get();
-        int dynamicLimit = frameRateLimit;
-        if (configLimit <= 0) {
-            return dynamicLimit;
-        }
-        if (dynamicLimit <= 0) {
-            return configLimit;
-        }
-        return Math.min(configLimit, dynamicLimit);
     }
 }

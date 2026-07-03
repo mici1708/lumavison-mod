@@ -13,7 +13,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
@@ -41,10 +40,6 @@ public final class ScreenTextureManager {
     private static final int FRAME_HASH_SAMPLE_SIZE = 8;
     private static final int PRUNE_INTERVAL_TICKS = 40;
     private static final long VISIBLE_UPLOAD_GRACE_MS = 250L;
-    private static final float FAST_CAMERA_ROTATION_DEGREES = 8.0F;
-    private static final float VERY_FAST_CAMERA_ROTATION_DEGREES = 18.0F;
-    private static final int FAST_CAMERA_MAX_FPS = 30;
-    private static final int VERY_FAST_CAMERA_MAX_FPS = 20;
 
     private static final ScreenTextureManager INSTANCE = new ScreenTextureManager();
 
@@ -58,10 +53,6 @@ public final class ScreenTextureManager {
     private final Set<BlockPos> pendingOrigins = new HashSet<>();
     private DynamicTextureHandle fallbackTexture;
     private int pruneTickCounter;
-    private boolean hasLastCameraRotation;
-    private float lastCameraYaw;
-    private float lastCameraPitch;
-    private float cameraRotationDegrees;
 
     private ScreenTextureManager() {
     }
@@ -106,55 +97,18 @@ public final class ScreenTextureManager {
             pruneTickCounter = 0;
             pruneInvalid(level);
         }
-        LocalPlayer player = Minecraft.getInstance().player;
-        updateCameraMotion(player);
-        Vec3 playerPos = player == null ? null : player.position();
-        int dynamicFrameRateLimit = dynamicFrameRateLimit();
+        Vec3 playerPos = playerPosition();
         for (ScreenPipeline pipeline : pipelines.values()) {
             if (playerPos != null && !pipeline.isWithinTickRange(playerPos)) {
                 continue;
             }
-            pipeline.tick(level, playerPos, dynamicFrameRateLimit);
+            pipeline.tick(level, playerPos);
         }
     }
 
     private static Vec3 playerPosition() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player == null ? null : player.position();
-    }
-
-    private void updateCameraMotion(LocalPlayer player) {
-        if (player == null) {
-            hasLastCameraRotation = false;
-            cameraRotationDegrees = 0.0F;
-            return;
-        }
-
-        float yaw = player.getYRot();
-        float pitch = player.getXRot();
-        if (!hasLastCameraRotation) {
-            hasLastCameraRotation = true;
-            lastCameraYaw = yaw;
-            lastCameraPitch = pitch;
-            cameraRotationDegrees = 0.0F;
-            return;
-        }
-
-        float yawDelta = Math.abs(Mth.wrapDegrees(yaw - lastCameraYaw));
-        float pitchDelta = Math.abs(Mth.wrapDegrees(pitch - lastCameraPitch));
-        cameraRotationDegrees = Math.max(yawDelta, pitchDelta);
-        lastCameraYaw = yaw;
-        lastCameraPitch = pitch;
-    }
-
-    private int dynamicFrameRateLimit() {
-        if (cameraRotationDegrees >= VERY_FAST_CAMERA_ROTATION_DEGREES) {
-            return VERY_FAST_CAMERA_MAX_FPS;
-        }
-        if (cameraRotationDegrees >= FAST_CAMERA_ROTATION_DEGREES) {
-            return FAST_CAMERA_MAX_FPS;
-        }
-        return 0;
     }
 
     public void clear() {
@@ -200,7 +154,7 @@ public final class ScreenTextureManager {
 
         ScreenPipeline pipeline = createPipeline(membership, descriptor);
         pipelines.put(key, pipeline);
-        pipeline.tick(level, playerPosition(), 0);
+        pipeline.tick(level, playerPosition());
     }
 
     private static VideoSourceDescriptor resolveDescriptor(Level level, ScreenGroupMembership membership) {
@@ -369,7 +323,7 @@ public final class ScreenTextureManager {
             return dx * dx + dy * dy + dz * dz <= maxDist * maxDist;
         }
 
-        private void tick(Level level, Vec3 playerPos, int dynamicFrameRateLimit) {
+        private void tick(Level level, Vec3 playerPos) {
             updateQualityTierIfNeeded(playerPos);
 
             long nowMs = System.currentTimeMillis();
@@ -378,7 +332,6 @@ public final class ScreenTextureManager {
                 return;
             }
             source.setActive(true);
-            source.setFrameRateLimit(dynamicFrameRateLimit);
 
             ScreenDisplaySettings displaySettings = LedScreenBlockEntity.resolveDisplaySettings(level, membership);
             displayCacheKey = displaySettings.cacheKey();
@@ -395,11 +348,6 @@ public final class ScreenTextureManager {
             }
 
             int maxUploadsPerSecond = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
-            if (dynamicFrameRateLimit > 0) {
-                maxUploadsPerSecond = maxUploadsPerSecond <= 0
-                        ? dynamicFrameRateLimit
-                        : Math.min(maxUploadsPerSecond, dynamicFrameRateLimit);
-            }
             if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
                 long minIntervalMs = 1000L / maxUploadsPerSecond;
                 if (nowMs - lastUploadMs < minIntervalMs) {

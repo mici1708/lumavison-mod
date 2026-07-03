@@ -24,12 +24,6 @@ public interface VideoSource {
     }
 
     /**
-     * Hints the highest frame rate worth producing right now (0 = source default).
-     */
-    default void setFrameRateLimit(int maxFramesPerSecond) {
-    }
-
-    /**
      * Returns the frame that should be displayed right now.
      * The returned instance may be reused across ticks; callers must not retain it.
      */
