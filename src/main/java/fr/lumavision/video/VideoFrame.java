@@ -4,8 +4,6 @@ import com.mojang.blaze3d.platform.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.IntBuffer;
 
 /**
  * Single frame of pixel data. Stored internally in NativeImage RGBA integer layout
@@ -153,23 +151,6 @@ public final class VideoFrame {
                 target.setPixelRGBA(x, y, pixels[rowBase + x]);
             }
         }
-    }
-
-    /**
-     * Writes this frame to a direct RGBA byte buffer in native integer order.
-     */
-    public void writeTo(ByteBuffer target) {
-        int requiredBytes = pixels.length * Integer.BYTES;
-        if (!target.isDirect() || target.capacity() < requiredBytes) {
-            throw new IllegalArgumentException("Target buffer must be direct and large enough");
-        }
-        target.clear();
-        target.limit(requiredBytes);
-        ByteBuffer nativeOrderedTarget = target.order(ByteOrder.nativeOrder());
-        IntBuffer intBuffer = nativeOrderedTarget.asIntBuffer();
-        intBuffer.put(pixels, 0, pixels.length);
-        target.position(0);
-        target.limit(requiredBytes);
     }
 
     public void copyColorGradedFrom(VideoFrame source, int[] redMap, int[] greenMap, int[] blueMap) {
