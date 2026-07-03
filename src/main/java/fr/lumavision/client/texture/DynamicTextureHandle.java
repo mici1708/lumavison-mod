@@ -15,21 +15,25 @@ import net.minecraft.resources.ResourceLocation;
  */
 public final class DynamicTextureHandle implements AutoCloseable {
 
-    private DynamicTexture texture;
-    private final ResourceLocation location;
+    private final DynamicTexture[] textures = new DynamicTexture[2];
+    private final ResourceLocation[] locations = new ResourceLocation[2];
+    private int activeTextureIndex;
     private int uploadedWidth;
     private int uploadedHeight;
 
     public DynamicTextureHandle(String textureId) {
-        this.location = new ResourceLocation(LumaVisionMod.MOD_ID, "dynamic/" + textureId);
-        this.texture = createTexture(1, 1);
+        this.locations[0] = new ResourceLocation(LumaVisionMod.MOD_ID, "dynamic/" + textureId + "_0");
+        this.locations[1] = new ResourceLocation(LumaVisionMod.MOD_ID, "dynamic/" + textureId + "_1");
+        this.textures[0] = createTexture(1, 1);
+        this.textures[1] = createTexture(1, 1);
         this.uploadedWidth = 1;
         this.uploadedHeight = 1;
-        register();
+        register(0);
+        register(1);
     }
 
     public ResourceLocation location() {
-        return location;
+        return locations[activeTextureIndex];
     }
 
     public void upload(VideoFrame frame) {
@@ -43,7 +47,9 @@ public final class DynamicTextureHandle implements AutoCloseable {
             recreateTexture(width, height);
         }
 
-        NativeImage pixels = texture.getPixels();
+        int uploadIndex = 1 - activeTextureIndex;
+        DynamicTexture uploadTexture = textures[uploadIndex];
+        NativeImage pixels = uploadTexture.getPixels();
         if (pixels == null
                 || pixels.getWidth() != width
                 || pixels.getHeight() != height) {
@@ -51,23 +57,27 @@ public final class DynamicTextureHandle implements AutoCloseable {
         }
 
         frame.writeTo(pixels);
-        texture.upload();
+        uploadTexture.upload();
+        activeTextureIndex = uploadIndex;
     }
 
     private void recreateTexture(int width, int height) {
         Minecraft minecraft = Minecraft.getInstance();
-        minecraft.getTextureManager().release(location);
-        if (texture != null) {
-            texture.close();
+        for (int i = 0; i < textures.length; i++) {
+            minecraft.getTextureManager().release(locations[i]);
+            if (textures[i] != null) {
+                textures[i].close();
+            }
+            textures[i] = createTexture(width, height);
+            register(i);
         }
-        texture = createTexture(width, height);
+        activeTextureIndex = 0;
         uploadedWidth = width;
         uploadedHeight = height;
-        register();
     }
 
-    private void register() {
-        Minecraft.getInstance().getTextureManager().register(location, texture);
+    private void register(int index) {
+        Minecraft.getInstance().getTextureManager().register(locations[index], textures[index]);
     }
 
     private static DynamicTexture createTexture(int width, int height) {
@@ -80,8 +90,10 @@ public final class DynamicTextureHandle implements AutoCloseable {
     public void close() {
         Minecraft minecraft = Minecraft.getInstance();
         Runnable cleanup = () -> {
-            minecraft.getTextureManager().release(location);
-            texture.close();
+            for (int i = 0; i < textures.length; i++) {
+                minecraft.getTextureManager().release(locations[i]);
+                textures[i].close();
+            }
         };
         if (minecraft.isSameThread()) {
             cleanup.run();
