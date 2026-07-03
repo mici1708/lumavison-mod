@@ -10,13 +10,27 @@ import fr.lumavision.screen.ScreenGroupMembership;
 public final class DisplayUvMapper {
 
     public record MappedUv(
-            float u0, float v0, float u1, float v1,
+            float bottomLeftU, float bottomLeftV,
+            float bottomRightU, float bottomRightV,
+            float topRightU, float topRightV,
+            float topLeftU, float topLeftV,
             float quadX0, float quadY0, float quadX1, float quadY1
     ) {
         public static MappedUv identity(ScreenGroupMembership group) {
+            return fromAxisAligned(group.uvMinU(), group.uvMinV(), group.uvMaxU(), group.uvMaxV(),
+                    0.0F, 0.0F, 1.0F, 1.0F);
+        }
+
+        public static MappedUv fromAxisAligned(
+                float u0, float v0, float u1, float v1,
+                float quadX0, float quadY0, float quadX1, float quadY1
+        ) {
             return new MappedUv(
-                    group.uvMinU(), group.uvMinV(), group.uvMaxU(), group.uvMaxV(),
-                    0.0F, 0.0F, 1.0F, 1.0F
+                    u0, v1,
+                    u1, v1,
+                    u1, v0,
+                    u0, v0,
+                    quadX0, quadY0, quadX1, quadY1
             );
         }
     }
@@ -39,19 +53,14 @@ public final class DisplayUvMapper {
         float cellU1 = group.uvMaxU();
         float cellV1 = group.uvMaxV();
 
-        float[] content = contentRegion(settings.mode(), frameWidth, frameHeight, group.gridWidth(), group.gridHeight());
+        float[] content = contentRegion(settings, frameWidth, frameHeight, group.gridWidth(), group.gridHeight());
 
         float u0 = lerp(content[0], content[2], cellU0);
         float u1 = lerp(content[0], content[2], cellU1);
         float v0 = lerp(content[1], content[3], cellV0);
         float v1 = lerp(content[1], content[3], cellV1);
 
-        float[] transformed = transformCorners(u0, v0, u1, v1, settings);
-
-        return new MappedUv(
-                transformed[0], transformed[1], transformed[2], transformed[3],
-                0.0F, 0.0F, 1.0F, 1.0F
-        );
+        return transformQuad(u0, v0, u1, v1, settings, 0.0F, 0.0F, 1.0F, 1.0F);
     }
 
     public static MappedUv mapWall(
@@ -63,12 +72,20 @@ public final class DisplayUvMapper {
     ) {
         float[] content = frameWidth <= 0 || frameHeight <= 0
                 ? new float[]{0.0F, 0.0F, 1.0F, 1.0F}
-                : contentRegion(settings.mode(), frameWidth, frameHeight, group.gridWidth(), group.gridHeight());
-        float[] transformed = transformCorners(content[0], content[1], content[2], content[3], settings);
-        return new MappedUv(
-                transformed[0], transformed[1], transformed[2], transformed[3],
-                0.0F, 0.0F, group.gridWidth(), quadY1
-        );
+                : contentRegion(settings, frameWidth, frameHeight, group.gridWidth(), group.gridHeight());
+        return transformQuad(content[0], content[1], content[2], content[3], settings,
+                0.0F, 0.0F, group.gridWidth(), quadY1);
+    }
+
+    private static float[] contentRegion(
+            ScreenDisplaySettings settings,
+            int frameW,
+            int frameH,
+            int gridW,
+            int gridH
+    ) {
+        boolean rotated = settings.rotation() == 90 || settings.rotation() == 270;
+        return contentRegion(settings.mode(), rotated ? frameH : frameW, rotated ? frameW : frameH, gridW, gridH);
     }
 
     private static float[] contentRegion(DisplayMode mode, int frameW, int frameH, int gridW, int gridH) {
@@ -102,36 +119,33 @@ public final class DisplayUvMapper {
         };
     }
 
-    /**
-     * Transforms the four corners of a cell UV rectangle through rotation and mirror in normalized space.
-     */
-    private static float[] transformCorners(float u0, float v0, float u1, float v1, ScreenDisplaySettings settings) {
-        float[][] corners = {
-                {u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}
-        };
+    private static MappedUv transformQuad(
+            float u0, float v0, float u1, float v1,
+            ScreenDisplaySettings settings,
+            float quadX0, float quadY0, float quadX1, float quadY1
+    ) {
+        float[] bottomLeft = transformPoint(u0, v1, settings);
+        float[] bottomRight = transformPoint(u1, v1, settings);
+        float[] topRight = transformPoint(u1, v0, settings);
+        float[] topLeft = transformPoint(u0, v0, settings);
 
-        float minU = 1.0F;
-        float minV = 1.0F;
-        float maxU = 0.0F;
-        float maxV = 0.0F;
+        return new MappedUv(
+                bottomLeft[0], bottomLeft[1],
+                bottomRight[0], bottomRight[1],
+                topRight[0], topRight[1],
+                topLeft[0], topLeft[1],
+                quadX0, quadY0, quadX1, quadY1
+        );
+    }
 
-        for (float[] corner : corners) {
-            float u = corner[0];
-            float v = corner[1];
-            if (settings.mirrorH()) {
-                u = 1.0F - u;
-            }
-            if (settings.mirrorV()) {
-                v = 1.0F - v;
-            }
-            float[] rotated = rotateUv(u, v, settings.rotation());
-            minU = Math.min(minU, rotated[0]);
-            minV = Math.min(minV, rotated[1]);
-            maxU = Math.max(maxU, rotated[0]);
-            maxV = Math.max(maxV, rotated[1]);
+    private static float[] transformPoint(float u, float v, ScreenDisplaySettings settings) {
+        if (settings.mirrorH()) {
+            u = 1.0F - u;
         }
-
-        return new float[]{minU, minV, maxU, maxV};
+        if (settings.mirrorV()) {
+            v = 1.0F - v;
+        }
+        return rotateUv(u, v, settings.rotation());
     }
 
     private static float[] rotateUv(float u, float v, int rotation) {

@@ -67,14 +67,20 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
         VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityCutoutNoCull(screenTexture));
         drawFacingQuad(consumer, poseStack.last(), facing,
                 mapped.quadX0(), mapped.quadY0(), mapped.quadX1(), mapped.quadY1(), FACE_EPSILON,
-                mapped.u0(), mapped.v0(), mapped.u1(), mapped.v1(),
+                mapped.bottomLeftU(), mapped.bottomLeftV(),
+                mapped.bottomRightU(), mapped.bottomRightV(),
+                mapped.topRightU(), mapped.topRightV(),
+                mapped.topLeftU(), mapped.topLeftV(),
                 vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3],
                 packedLight, packedOverlay);
     }
 
     private static void drawFacingQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction facing,
                                        float x0, float y0, float x1, float y1, float epsilon,
-                                       float u0, float v0, float u1, float v1,
+                                       float bottomLeftU, float bottomLeftV,
+                                       float bottomRightU, float bottomRightV,
+                                       float topRightU, float topRightV,
+                                       float topLeftU, float topLeftV,
                                        int red, int green, int blue, int alpha,
                                        int light, int overlay) {
         var matrix = pose.pose();
@@ -95,22 +101,22 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
 
         switch (facing.getAxis()) {
             case X -> {
-                putVertex(consumer, matrix, normalMatrix, offset, y0, x0, u0, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, offset, y0, x1, u1, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, offset, y1, x1, u1, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, offset, y1, x0, u0, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, offset, y0, x0, bottomLeftU, bottomLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, offset, y0, x1, bottomRightU, bottomRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, offset, y1, x1, topRightU, topRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, offset, y1, x0, topLeftU, topLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
             }
             case Y -> {
-                putVertex(consumer, matrix, normalMatrix, x0, offset, y0, u0, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x1, offset, y0, u1, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x1, offset, y1, u1, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x0, offset, y1, u0, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x0, offset, y0, bottomLeftU, bottomLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x1, offset, y0, bottomRightU, bottomRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x1, offset, y1, topRightU, topRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x0, offset, y1, topLeftU, topLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
             }
             case Z -> {
-                putVertex(consumer, matrix, normalMatrix, x0, y0, offset, u0, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x1, y0, offset, u1, v1, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x1, y1, offset, u1, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
-                putVertex(consumer, matrix, normalMatrix, x0, y1, offset, u0, v0, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x0, y0, offset, bottomLeftU, bottomLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x1, y0, offset, bottomRightU, bottomRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x1, y1, offset, topRightU, topRightV, red, green, blue, alpha, nx, ny, nz, light, overlay);
+                putVertex(consumer, matrix, normalMatrix, x0, y1, offset, topLeftU, topLeftV, red, green, blue, alpha, nx, ny, nz, light, overlay);
             }
         }
     }
