@@ -28,6 +28,7 @@ public final class NdiVideoSource implements VideoSource {
     private DevolayReceiver receiver;
     private Thread captureThread;
     private volatile boolean running;
+    private volatile boolean active = true;
     private long lastConvertedFrameMs;
 
     public NdiVideoSource(String sourceName, int targetWidth, int targetHeight) {
@@ -54,6 +55,11 @@ public final class NdiVideoSource implements VideoSource {
 
     @Override
     public void tick() {
+    }
+
+    @Override
+    public void setActive(boolean active) {
+        this.active = active;
     }
 
     @Override
@@ -129,6 +135,9 @@ public final class NdiVideoSource implements VideoSource {
     }
 
     private boolean shouldConvertFrame() {
+        if (!active) {
+            return false;
+        }
         int maxFramesPerSecond = ModConfig.MAX_NDI_CAPTURE_FRAMES_PER_SECOND.get();
         if (maxFramesPerSecond <= 0 || lastConvertedFrameMs <= 0) {
             return true;

@@ -138,7 +138,7 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
 
     @Override
     public boolean shouldRenderOffScreen(LedScreenBlockEntity blockEntity) {
-        return blockEntity.isGroupOrigin();
+        return false;
     }
 
     @Override

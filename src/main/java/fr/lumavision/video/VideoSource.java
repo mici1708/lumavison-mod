@@ -18,6 +18,12 @@ public interface VideoSource {
     void tick();
 
     /**
+     * Hints whether the source is currently visible enough to spend work decoding frames.
+     */
+    default void setActive(boolean active) {
+    }
+
+    /**
      * Returns the frame that should be displayed right now.
      * The returned instance may be reused across ticks; callers must not retain it.
      */

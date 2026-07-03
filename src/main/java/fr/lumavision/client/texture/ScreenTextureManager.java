@@ -39,6 +39,7 @@ public final class ScreenTextureManager {
     private static final int MAX_PIPELINE_TICK_DISTANCE = 96;
     private static final int FRAME_HASH_SAMPLE_SIZE = 8;
     private static final int PRUNE_INTERVAL_TICKS = 40;
+    private static final long VISIBLE_UPLOAD_GRACE_MS = 250L;
 
     private static final ScreenTextureManager INSTANCE = new ScreenTextureManager();
 
@@ -64,6 +65,7 @@ public final class ScreenTextureManager {
         ScreenGroupMembership membership = blockEntity.getGroupMembership();
         ScreenPipeline pipeline = pipelines.get(membership.groupKey());
         if (pipeline != null) {
+            pipeline.markRendered();
             return pipeline.texture().location();
         }
 
@@ -258,6 +260,7 @@ public final class ScreenTextureManager {
         private long lastUploadMs;
         private WallRenderContext renderContext;
         private String lastRenderContextKey = "";
+        private long lastRenderedMs = System.currentTimeMillis();
 
         private ScreenPipeline(ScreenGroupMembership membership, VideoSourceDescriptor descriptor,
                                VideoSource source, DynamicTextureHandle texture, QualityTier qualityTier) {
@@ -292,6 +295,10 @@ public final class ScreenTextureManager {
             return renderContext;
         }
 
+        private void markRendered() {
+            lastRenderedMs = System.currentTimeMillis();
+        }
+
         private void updateRenderContextIfNeeded(ScreenDisplaySettings displaySettings) {
             int[] size = frameSize();
             String key = displaySettings.cacheKey() + "@" + size[0] + "x" + size[1];
@@ -319,6 +326,13 @@ public final class ScreenTextureManager {
         private void tick(Level level, Vec3 playerPos) {
             updateQualityTierIfNeeded(playerPos);
 
+            long nowMs = System.currentTimeMillis();
+            if (!isRecentlyRendered(nowMs)) {
+                source.setActive(false);
+                return;
+            }
+            source.setActive(true);
+
             ScreenDisplaySettings displaySettings = LedScreenBlockEntity.resolveDisplaySettings(level, membership);
             displayCacheKey = displaySettings.cacheKey();
             String textureGradingKey = displaySettings.textureColorGradingKey();
@@ -333,7 +347,6 @@ public final class ScreenTextureManager {
                 return;
             }
 
-            long nowMs = System.currentTimeMillis();
             int maxUploadsPerSecond = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
             if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
                 long minIntervalMs = 1000L / maxUploadsPerSecond;
@@ -371,6 +384,10 @@ public final class ScreenTextureManager {
             lastUploadedFrameRevision = frameRevision;
             lastUploadedDisplayKey = textureGradingKey;
             lastUploadMs = nowMs;
+        }
+
+        private boolean isRecentlyRendered(long nowMs) {
+            return nowMs - lastRenderedMs <= VISIBLE_UPLOAD_GRACE_MS;
         }
 
         private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {
