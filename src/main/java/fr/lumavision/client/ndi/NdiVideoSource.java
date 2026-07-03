@@ -99,26 +99,31 @@ public final class NdiVideoSource implements VideoSource {
 
     private void captureLoop() {
         int timeout = ModConfig.NDI_RECEIVE_TIMEOUT_MS.get();
-        while (running) {
-            DevolayVideoFrame ndiFrame = new DevolayVideoFrame();
-            try {
-                DevolayFrameType type = receiver.receiveCapture(ndiFrame, null, null, timeout);
-                if (type == DevolayFrameType.VIDEO) {
-                    if (!shouldConvertFrame()) {
-                        continue;
+        DevolayVideoFrame ndiFrame = new DevolayVideoFrame();
+        try {
+            while (running) {
+                try {
+                    DevolayFrameType type = receiver.receiveCapture(ndiFrame, null, null, timeout);
+                    if (type == DevolayFrameType.VIDEO) {
+                        if (!shouldConvertFrame()) {
+                            continue;
+                        }
+                        VideoFrame converted = converter.convert(ndiFrame, targetWidth, targetHeight);
+                        displayFrame.set(converted);
+                        lastConvertedFrameMs = System.currentTimeMillis();
+                    } else if (type == DevolayFrameType.ERROR) {
+                        LumaVisionMod.LOGGER.warn("NDI connection lost for '{}'", sourceName);
                     }
-                    VideoFrame converted = converter.convert(ndiFrame, targetWidth, targetHeight);
-                    displayFrame.set(converted);
-                    lastConvertedFrameMs = System.currentTimeMillis();
-                } else if (type == DevolayFrameType.ERROR) {
-                    LumaVisionMod.LOGGER.warn("NDI connection lost for '{}'", sourceName);
+                } catch (Throwable throwable) {
+                    if (running) {
+                        LumaVisionMod.LOGGER.error("NDI capture error for '{}'", sourceName, throwable);
+                    }
                 }
-            } catch (Throwable throwable) {
-                if (running) {
-                    LumaVisionMod.LOGGER.error("NDI capture error for '{}'", sourceName, throwable);
-                }
-            } finally {
+            }
+        } finally {
+            try {
                 ndiFrame.close();
+            } catch (Throwable ignored) {
             }
         }
     }

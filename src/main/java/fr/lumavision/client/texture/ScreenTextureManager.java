@@ -246,6 +246,7 @@ public final class ScreenTextureManager {
         private final DynamicTextureHandle texture;
         private QualityTier qualityTier;
         private VideoFrame gradedFrame;
+        private final DisplayColorGrading.LookupTables colorGradingTables = new DisplayColorGrading.LookupTables();
 
         private int lastFrameWidth;
         private int lastFrameHeight;
@@ -358,7 +359,8 @@ public final class ScreenTextureManager {
 
             if (displaySettings.needsTextureColorGrading()) {
                 ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
-                DisplayColorGrading.applyInto(frame, gradedFrame, displaySettings);
+                colorGradingTables.update(displaySettings);
+                DisplayColorGrading.applyInto(frame, gradedFrame, colorGradingTables);
                 texture.upload(gradedFrame);
             } else {
                 texture.upload(frame);

@@ -13,19 +13,37 @@ public final class DisplayColorGrading {
     }
 
     public static void applyInto(VideoFrame source, VideoFrame target, ScreenDisplaySettings settings) {
+        LookupTables tables = new LookupTables();
+        tables.update(settings);
+        applyInto(source, target, tables);
+    }
+
+    public static void applyInto(VideoFrame source, VideoFrame target, LookupTables tables) {
         if (source.getWidth() != target.getWidth() || source.getHeight() != target.getHeight()) {
             throw new IllegalArgumentException("Frame size mismatch");
         }
 
-        int[] redMap = new int[256];
-        int[] greenMap = new int[256];
-        int[] blueMap = new int[256];
-        buildLookupTables(settings, redMap, greenMap, blueMap);
-        target.copyColorGradedFrom(source, redMap, greenMap, blueMap);
+        target.copyColorGradedFrom(source, tables.redMap, tables.greenMap, tables.blueMap);
     }
 
     public static int[] vertexColor(ScreenDisplaySettings settings) {
         return new int[]{255, 255, 255, 255};
+    }
+
+    public static final class LookupTables {
+        private final int[] redMap = new int[256];
+        private final int[] greenMap = new int[256];
+        private final int[] blueMap = new int[256];
+        private String cacheKey;
+
+        public void update(ScreenDisplaySettings settings) {
+            String newCacheKey = settings.textureColorGradingKey();
+            if (newCacheKey.equals(cacheKey)) {
+                return;
+            }
+            cacheKey = newCacheKey;
+            buildLookupTables(settings, redMap, greenMap, blueMap);
+        }
     }
 
     private static void buildLookupTables(ScreenDisplaySettings settings, int[] redMap, int[] greenMap, int[] blueMap) {
