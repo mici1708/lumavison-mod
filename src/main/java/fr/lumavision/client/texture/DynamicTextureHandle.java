@@ -6,6 +6,10 @@ import fr.lumavision.video.VideoFrame;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
+import org.lwjgl.opengl.GL11C;
+import org.lwjgl.system.MemoryUtil;
+
+import java.nio.ByteBuffer;
 
 /**
  * GPU-backed texture updated from {@link VideoFrame} data.
@@ -20,6 +24,7 @@ public final class DynamicTextureHandle implements AutoCloseable {
     private int activeTextureIndex;
     private int uploadedWidth;
     private int uploadedHeight;
+    private ByteBuffer uploadBuffer;
 
     public DynamicTextureHandle(String textureId) {
         this.locations[0] = new ResourceLocation(LumaVisionMod.MOD_ID, "dynamic/" + textureId + "_0");
@@ -49,16 +54,33 @@ public final class DynamicTextureHandle implements AutoCloseable {
 
         int uploadIndex = 1 - activeTextureIndex;
         DynamicTexture uploadTexture = textures[uploadIndex];
-        NativeImage pixels = uploadTexture.getPixels();
-        if (pixels == null
-                || pixels.getWidth() != width
-                || pixels.getHeight() != height) {
+        ensureUploadBuffer(width, height);
+        frame.writeTo(uploadBuffer);
+        uploadTexture.bind();
+        GL11C.glPixelStorei(GL11C.GL_UNPACK_ALIGNMENT, 4);
+        GL11C.glTexSubImage2D(
+                GL11C.GL_TEXTURE_2D,
+                0,
+                0,
+                0,
+                width,
+                height,
+                GL11C.GL_RGBA,
+                GL11C.GL_UNSIGNED_BYTE,
+                uploadBuffer
+        );
+        activeTextureIndex = uploadIndex;
+    }
+
+    private void ensureUploadBuffer(int width, int height) {
+        int requiredBytes = width * height * Integer.BYTES;
+        if (uploadBuffer != null && uploadBuffer.capacity() >= requiredBytes) {
             return;
         }
-
-        frame.writeTo(pixels);
-        uploadTexture.upload();
-        activeTextureIndex = uploadIndex;
+        if (uploadBuffer != null) {
+            MemoryUtil.memFree(uploadBuffer);
+        }
+        uploadBuffer = MemoryUtil.memAlloc(requiredBytes);
     }
 
     private void recreateTexture(int width, int height) {
@@ -93,6 +115,10 @@ public final class DynamicTextureHandle implements AutoCloseable {
             for (int i = 0; i < textures.length; i++) {
                 minecraft.getTextureManager().release(locations[i]);
                 textures[i].close();
+            }
+            if (uploadBuffer != null) {
+                MemoryUtil.memFree(uploadBuffer);
+                uploadBuffer = null;
             }
         };
         if (minecraft.isSameThread()) {
