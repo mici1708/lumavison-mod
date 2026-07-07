@@ -39,7 +39,8 @@ public final class ScreenTextureManager {
     private static final int MAX_PIPELINE_TICK_DISTANCE = 96;
     private static final int FRAME_HASH_SAMPLE_SIZE = 8;
     private static final int PRUNE_INTERVAL_TICKS = 40;
-    private static final long VISIBLE_UPLOAD_GRACE_MS = 250L;
+    private static final int FAST_CAMERA_UPLOAD_COOLDOWN_TICKS = 8;
+    private static final long VISIBLE_UPLOAD_GRACE_MS = 1500L;
 
     private static final ScreenTextureManager INSTANCE = new ScreenTextureManager();
 
@@ -55,6 +56,10 @@ public final class ScreenTextureManager {
     private DynamicTextureHandle fallbackTexture;
     private int pruneTickCounter;
     private int tickSequence;
+    private boolean hasLastCameraAngles;
+    private float lastCameraYaw;
+    private float lastCameraPitch;
+    private int fastCameraUploadTicks;
 
     private ScreenTextureManager() {
     }
@@ -99,19 +104,58 @@ public final class ScreenTextureManager {
             pruneTickCounter = 0;
             pruneInvalid(level);
         }
-        Vec3 playerPos = playerPosition();
+        LocalPlayer player = Minecraft.getInstance().player;
+        Vec3 playerPos = player == null ? null : player.position();
+        updateCameraMotion(player);
+        boolean fastCameraMotion = fastCameraUploadTicks > 0;
         tickSequence++;
         for (ScreenPipeline pipeline : pipelines.values()) {
             if (playerPos != null && !pipeline.isWithinTickRange(playerPos)) {
                 continue;
             }
-            pipeline.tick(level, playerPos, tickSequence);
+            pipeline.tick(level, playerPos, tickSequence, fastCameraMotion);
         }
     }
 
     private static Vec3 playerPosition() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player == null ? null : player.position();
+    }
+
+    private void updateCameraMotion(LocalPlayer player) {
+        if (player == null || !ModConfig.ENABLE_ADAPTIVE_UPLOAD_THROTTLE.get()) {
+            hasLastCameraAngles = false;
+            fastCameraUploadTicks = 0;
+            return;
+        }
+
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        if (hasLastCameraAngles) {
+            float yawDelta = Math.abs(wrapDegrees(yaw - lastCameraYaw));
+            float pitchDelta = Math.abs(pitch - lastCameraPitch);
+            float motionDegrees = yawDelta + pitchDelta;
+            if (motionDegrees >= ModConfig.FAST_CAMERA_THRESHOLD_DEGREES_PER_TICK.get()) {
+                fastCameraUploadTicks = FAST_CAMERA_UPLOAD_COOLDOWN_TICKS;
+            } else if (fastCameraUploadTicks > 0) {
+                fastCameraUploadTicks--;
+            }
+        } else {
+            hasLastCameraAngles = true;
+        }
+        lastCameraYaw = yaw;
+        lastCameraPitch = pitch;
+    }
+
+    private static float wrapDegrees(float degrees) {
+        degrees %= 360.0F;
+        if (degrees >= 180.0F) {
+            degrees -= 360.0F;
+        }
+        if (degrees < -180.0F) {
+            degrees += 360.0F;
+        }
+        return degrees;
     }
 
     public void clear() {
@@ -161,7 +205,7 @@ public final class ScreenTextureManager {
 
         ScreenPipeline pipeline = createPipeline(membership, descriptor, displaySettings);
         pipelines.put(key, pipeline);
-        pipeline.tick(level, playerPosition(), ++tickSequence);
+        pipeline.tick(level, playerPosition(), ++tickSequence, false);
     }
 
     private static VideoSourceDescriptor resolveDescriptor(Level level, ScreenGroupMembership membership) {
@@ -342,7 +386,7 @@ public final class ScreenTextureManager {
             return dx * dx + dy * dy + dz * dz <= maxDist * maxDist;
         }
 
-        private void tick(Level level, Vec3 playerPos, int tickSequence) {
+        private void tick(Level level, Vec3 playerPos, int tickSequence, boolean fastCameraMotion) {
             ScreenDisplaySettings displaySettings = LedScreenBlockEntity.resolveDisplaySettings(level, membership);
             updateQualityTierIfNeeded(playerPos, displaySettings);
             updateRenderContextIfNeeded(displaySettings);
@@ -351,7 +395,7 @@ public final class ScreenTextureManager {
             if (nowMs - lastRenderedMs <= VISIBLE_UPLOAD_GRACE_MS) {
                 sharedTexture.markRendered(nowMs);
             }
-            sharedTexture.tick(tickSequence);
+            sharedTexture.tick(tickSequence, fastCameraMotion);
         }
 
         private void updateQualityTierIfNeeded(Vec3 playerPos, ScreenDisplaySettings displaySettings) {
@@ -486,7 +530,7 @@ public final class ScreenTextureManager {
             lastRenderedMs = nowMs;
         }
 
-        private void tick(int tickSequence) {
+        private void tick(int tickSequence, boolean fastCameraMotion) {
             if (lastTickSequence == tickSequence) {
                 return;
             }
@@ -497,8 +541,18 @@ public final class ScreenTextureManager {
                 source.setActive(false);
                 return;
             }
-            source.setActive(true);
+            int maxUploadsPerSecond = effectiveMaxUploadsPerSecond(fastCameraMotion);
+            if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
+                long minIntervalMs = 1000L / maxUploadsPerSecond;
+                if (nowMs - lastUploadMs < minIntervalMs) {
+                    if (fastCameraMotion) {
+                        source.setActive(false);
+                    }
+                    return;
+                }
+            }
 
+            source.setActive(true);
             source.tick();
             VideoFrame frame = source.getCurrentFrame();
             lastFrameWidth = frame.getWidth();
@@ -506,14 +560,6 @@ public final class ScreenTextureManager {
 
             if (frame.getWidth() != source.getWidth() || frame.getHeight() != source.getHeight()) {
                 return;
-            }
-
-            int maxUploadsPerSecond = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
-            if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
-                long minIntervalMs = 1000L / maxUploadsPerSecond;
-                if (nowMs - lastUploadMs < minIntervalMs) {
-                    return;
-                }
             }
 
             long frameRevision = frame.getRevision();
@@ -541,6 +587,15 @@ public final class ScreenTextureManager {
             lastUploadedFrame = frame;
             lastUploadedFrameRevision = frameRevision;
             lastUploadMs = nowMs;
+        }
+
+        private static int effectiveMaxUploadsPerSecond(boolean fastCameraMotion) {
+            int configuredMax = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
+            if (!fastCameraMotion || !ModConfig.ENABLE_ADAPTIVE_UPLOAD_THROTTLE.get()) {
+                return configuredMax;
+            }
+            int fastCameraMax = ModConfig.FAST_CAMERA_MAX_TEXTURE_UPDATES_PER_SECOND.get();
+            return configuredMax <= 0 ? fastCameraMax : Math.min(configuredMax, fastCameraMax);
         }
 
         private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {

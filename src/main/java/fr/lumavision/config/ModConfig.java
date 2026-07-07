@@ -34,6 +34,18 @@ public final class ModConfig {
             .comment("Maximum GPU texture uploads per second per LED wall (0 = unlimited). Lower values reduce CPU/GPU load near screens.")
             .defineInRange("maxTextureUpdatesPerSecond", 20, 0, 60);
 
+    public static final ForgeConfigSpec.BooleanValue ENABLE_ADAPTIVE_UPLOAD_THROTTLE = BUILDER
+            .comment("Temporarily lowers LED texture update rate during fast camera movement to reduce frame drops.")
+            .define("enableAdaptiveUploadThrottle", true);
+
+    public static final ForgeConfigSpec.IntValue FAST_CAMERA_MAX_TEXTURE_UPDATES_PER_SECOND = BUILDER
+            .comment("Maximum LED texture uploads per second while the player is turning the camera quickly.")
+            .defineInRange("fastCameraMaxTextureUpdatesPerSecond", 15, 1, 60);
+
+    public static final ForgeConfigSpec.IntValue FAST_CAMERA_THRESHOLD_DEGREES_PER_TICK = BUILDER
+            .comment("Camera angle change per client tick that enables the temporary fast-camera upload limit.")
+            .defineInRange("fastCameraThresholdDegreesPerTick", 18, 1, 180);
+
     public static final ForgeConfigSpec.IntValue MAX_NDI_CAPTURE_FRAMES_PER_SECOND = BUILDER
             .comment("Maximum NDI frames converted per second per active wall (0 = unlimited).")
             .defineInRange("maxNdiCaptureFramesPerSecond", 30, 0, 60);
