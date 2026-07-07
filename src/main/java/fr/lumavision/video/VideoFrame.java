@@ -171,6 +171,23 @@ public final class VideoFrame {
         markDirty();
     }
 
+    public void copyScaledFrom(VideoFrame source) {
+        if (source.width == width && source.height == height) {
+            System.arraycopy(source.pixels, 0, pixels, 0, pixels.length);
+            markDirty();
+            return;
+        }
+
+        int[] sourcePixels = source.pixels;
+        for (int y = 0, rowBase = 0; y < height; y++, rowBase += width) {
+            int sourceRowBase = (y * source.height / height) * source.width;
+            for (int x = 0; x < width; x++) {
+                pixels[rowBase + x] = sourcePixels[sourceRowBase + (x * source.width / width)];
+            }
+        }
+        markDirty();
+    }
+
     private int index(int x, int y) {
         return y * width + x;
     }

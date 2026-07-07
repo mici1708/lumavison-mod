@@ -197,13 +197,15 @@ public final class NdiProvider implements VideoSourceProvider {
     }
 
     private synchronized VideoSource acquireSharedSource(String sourceName, int targetWidth, int targetHeight) {
-        String key = sharedSourceKey(sourceName, targetWidth, targetHeight);
+        String key = sharedSourceKey(sourceName);
         SharedNdiSource shared = sharedSources.get(key);
         if (shared == null) {
             shared = new SharedNdiSource(key, new NdiVideoSource(sourceName, targetWidth, targetHeight));
             sharedSources.put(key, shared);
+        } else {
+            shared.ensureCapacity(sourceName, targetWidth, targetHeight);
         }
-        return shared.retain();
+        return shared.retain(targetWidth, targetHeight);
     }
 
     private synchronized void releaseSharedSource(SharedNdiSource shared, SharedNdiLease lease) {
@@ -222,13 +224,13 @@ public final class NdiProvider implements VideoSourceProvider {
         sharedSources.clear();
     }
 
-    private static String sharedSourceKey(String sourceName, int targetWidth, int targetHeight) {
-        return sourceName + "@" + targetWidth + "x" + targetHeight;
+    private static String sharedSourceKey(String sourceName) {
+        return sourceName;
     }
 
     private final class SharedNdiSource {
         private final String key;
-        private final VideoSource delegate;
+        private VideoSource delegate;
         private final Set<SharedNdiLease> leases = Collections.newSetFromMap(new IdentityHashMap<>());
 
         private SharedNdiSource(String key, VideoSource delegate) {
@@ -240,11 +242,26 @@ public final class NdiProvider implements VideoSourceProvider {
             return key;
         }
 
-        private SharedNdiLease retain() {
-            SharedNdiLease lease = new SharedNdiLease(this);
+        private SharedNdiLease retain(int targetWidth, int targetHeight) {
+            SharedNdiLease lease = new SharedNdiLease(this, targetWidth, targetHeight);
             leases.add(lease);
             updateDelegateActive();
             return lease;
+        }
+
+        private void ensureCapacity(String sourceName, int targetWidth, int targetHeight) {
+            if (targetWidth <= delegate.getWidth() && targetHeight <= delegate.getHeight()) {
+                return;
+            }
+            boolean active = isAnyLeaseActive();
+            int width = Math.max(targetWidth, delegate.getWidth());
+            int height = Math.max(targetHeight, delegate.getHeight());
+            delegate.dispose();
+            delegate = new NdiVideoSource(sourceName, width, height);
+            delegate.setActive(active);
+            for (SharedNdiLease lease : leases) {
+                lease.invalidateScaledFrame();
+            }
         }
 
         private boolean release(SharedNdiLease lease) {
@@ -271,6 +288,15 @@ public final class NdiProvider implements VideoSourceProvider {
             delegate.setActive(false);
         }
 
+        private boolean isAnyLeaseActive() {
+            for (SharedNdiLease lease : leases) {
+                if (lease.active) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void disposeDelegate() {
             delegate.dispose();
         }
@@ -278,21 +304,28 @@ public final class NdiProvider implements VideoSourceProvider {
 
     private final class SharedNdiLease implements VideoSource {
         private final SharedNdiSource shared;
+        private final int targetWidth;
+        private final int targetHeight;
         private boolean active = true;
         private boolean disposed;
+        private VideoFrame scaledFrame;
+        private VideoFrame lastSourceFrame;
+        private long lastSourceRevision = -1L;
 
-        private SharedNdiLease(SharedNdiSource shared) {
+        private SharedNdiLease(SharedNdiSource shared, int targetWidth, int targetHeight) {
             this.shared = shared;
+            this.targetWidth = targetWidth;
+            this.targetHeight = targetHeight;
         }
 
         @Override
         public int getWidth() {
-            return shared.delegate.getWidth();
+            return targetWidth;
         }
 
         @Override
         public int getHeight() {
-            return shared.delegate.getHeight();
+            return targetHeight;
         }
 
         @Override
@@ -311,7 +344,25 @@ public final class NdiProvider implements VideoSourceProvider {
 
         @Override
         public VideoFrame getCurrentFrame() {
-            return shared.delegate.getCurrentFrame();
+            VideoFrame sourceFrame = shared.delegate.getCurrentFrame();
+            if (sourceFrame.getWidth() == targetWidth && sourceFrame.getHeight() == targetHeight) {
+                return sourceFrame;
+            }
+            if (scaledFrame == null || scaledFrame.getWidth() != targetWidth || scaledFrame.getHeight() != targetHeight) {
+                scaledFrame = new VideoFrame(targetWidth, targetHeight);
+            }
+            long revision = sourceFrame.getRevision();
+            if (sourceFrame != lastSourceFrame || revision != lastSourceRevision) {
+                scaledFrame.copyScaledFrom(sourceFrame);
+                lastSourceFrame = sourceFrame;
+                lastSourceRevision = revision;
+            }
+            return scaledFrame;
+        }
+
+        private void invalidateScaledFrame() {
+            lastSourceFrame = null;
+            lastSourceRevision = -1L;
         }
 
         @Override
