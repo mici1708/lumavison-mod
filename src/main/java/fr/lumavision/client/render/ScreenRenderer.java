@@ -9,6 +9,7 @@ import fr.lumavision.client.display.DisplayUvMapper;
 import fr.lumavision.client.texture.ScreenTextureManager;
 import fr.lumavision.screen.ScreenDisplaySettings;
 import fr.lumavision.screen.ScreenGroupMembership;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -72,7 +73,7 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
                 mapped.topRightU(), mapped.topRightV(),
                 mapped.topLeftU(), mapped.topLeftV(),
                 vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3],
-                packedLight, packedOverlay);
+                LightTexture.FULL_BRIGHT, packedOverlay);
     }
 
     private static void drawFacingQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction facing,

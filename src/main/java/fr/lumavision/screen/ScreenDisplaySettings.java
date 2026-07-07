@@ -24,7 +24,7 @@ public record ScreenDisplaySettings(
 
     public ScreenDisplaySettings {
         rotation = normalizeRotation(rotation);
-        brightness = clamp(brightness, 0.0F, 2.0F);
+        brightness = clamp(brightness, 0.0F, 4.0F);
         contrast = clamp(contrast, 0.0F, 2.0F);
         gamma = clamp(gamma, 0.5F, 2.5F);
         colorTemp = clamp(colorTemp, -1.0F, 1.0F);

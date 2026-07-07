@@ -240,7 +240,7 @@ public final class ScreenConfigScreen extends Screen implements MenuAccess<Scree
         mirrorVButton.active = canConfigure;
 
         y += 32;
-        y = addSlider(left, right, y, "brightness", 0.0F, 2.0F, displaySettings.brightness(),
+        y = addSlider(left, right, y, "brightness", 0.0F, 4.0F, displaySettings.brightness(),
                 value -> displaySettings = displaySettings.withBrightness(value));
         y = addSlider(left, right, y, "contrast", 0.0F, 2.0F, displaySettings.contrast(),
                 value -> displaySettings = displaySettings.withContrast(value));
