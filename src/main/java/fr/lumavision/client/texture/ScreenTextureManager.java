@@ -50,9 +50,11 @@ public final class ScreenTextureManager {
     }
 
     private final Map<Long, ScreenPipeline> pipelines = new HashMap<>();
+    private final Map<String, SharedTexturePipeline> sharedTexturePipelines = new HashMap<>();
     private final Set<BlockPos> pendingOrigins = new HashSet<>();
     private DynamicTextureHandle fallbackTexture;
     private int pruneTickCounter;
+    private int tickSequence;
 
     private ScreenTextureManager() {
     }
@@ -98,11 +100,12 @@ public final class ScreenTextureManager {
             pruneInvalid(level);
         }
         Vec3 playerPos = playerPosition();
+        tickSequence++;
         for (ScreenPipeline pipeline : pipelines.values()) {
             if (playerPos != null && !pipeline.isWithinTickRange(playerPos)) {
                 continue;
             }
-            pipeline.tick(level, playerPos);
+            pipeline.tick(level, playerPos, tickSequence);
         }
     }
 
@@ -116,6 +119,10 @@ public final class ScreenTextureManager {
             pipeline.close();
         }
         pipelines.clear();
+        for (SharedTexturePipeline pipeline : sharedTexturePipelines.values()) {
+            pipeline.close();
+        }
+        sharedTexturePipelines.clear();
         pendingOrigins.clear();
         if (fallbackTexture != null) {
             fallbackTexture.close();
@@ -152,9 +159,9 @@ public final class ScreenTextureManager {
             existing.close();
         }
 
-        ScreenPipeline pipeline = createPipeline(membership, descriptor);
+        ScreenPipeline pipeline = createPipeline(membership, descriptor, displaySettings);
         pipelines.put(key, pipeline);
-        pipeline.tick(level, playerPosition());
+        pipeline.tick(level, playerPosition(), ++tickSequence);
     }
 
     private static VideoSourceDescriptor resolveDescriptor(Level level, ScreenGroupMembership membership) {
@@ -165,11 +172,39 @@ public final class ScreenTextureManager {
         return VideoSourceDescriptor.testPattern();
     }
 
-    private static ScreenPipeline createPipeline(ScreenGroupMembership membership, VideoSourceDescriptor descriptor) {
-        int[] size = computeTextureSize(membership.gridWidth(), membership.gridHeight(), QualityTier.NEAR);
-        VideoSource source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, size[0], size[1]);
-        DynamicTextureHandle texture = new DynamicTextureHandle("group_" + membership.groupKey());
-        return new ScreenPipeline(membership, descriptor, source, texture, QualityTier.NEAR);
+    private ScreenPipeline createPipeline(ScreenGroupMembership membership, VideoSourceDescriptor descriptor,
+                                          ScreenDisplaySettings displaySettings) {
+        return new ScreenPipeline(membership, descriptor, displaySettings);
+    }
+
+    private SharedTexturePipeline acquireSharedTexture(VideoSourceDescriptor descriptor,
+                                                       ScreenDisplaySettings displaySettings,
+                                                       QualityTier qualityTier,
+                                                       int width,
+                                                       int height) {
+        String key = sharedTextureKey(descriptor, displaySettings);
+        SharedTexturePipeline pipeline = sharedTexturePipelines.get(key);
+        if (pipeline == null) {
+            pipeline = new SharedTexturePipeline(key, descriptor, displaySettings, width, height);
+            sharedTexturePipelines.put(key, pipeline);
+        } else {
+            pipeline.ensureCapacity(width, height);
+        }
+        pipeline.retain();
+        return pipeline;
+    }
+
+    private void releaseSharedTexture(SharedTexturePipeline pipeline) {
+        if (pipeline == null || !pipeline.release()) {
+            return;
+        }
+        if (sharedTexturePipelines.remove(pipeline.key(), pipeline)) {
+            pipeline.close();
+        }
+    }
+
+    private static String sharedTextureKey(VideoSourceDescriptor descriptor, ScreenDisplaySettings displaySettings) {
+        return descriptor.cacheKey() + "|" + displaySettings.textureColorGradingKey();
     }
 
     static int[] computeTextureSize(int gridWidth, int gridHeight) {
@@ -241,35 +276,22 @@ public final class ScreenTextureManager {
         }
     }
 
-    private static final class ScreenPipeline implements AutoCloseable {
+    private final class ScreenPipeline implements AutoCloseable {
         private final ScreenGroupMembership membership;
         private final VideoSourceDescriptor descriptor;
-        private VideoSource source;
-        private final DynamicTextureHandle texture;
+        private SharedTexturePipeline sharedTexture;
         private QualityTier qualityTier;
-        private VideoFrame gradedFrame;
-        private final DisplayColorGrading.LookupTables colorGradingTables = new DisplayColorGrading.LookupTables();
-
-        private int lastFrameWidth;
-        private int lastFrameHeight;
-        private String displayCacheKey = ScreenDisplaySettings.DEFAULT.cacheKey();
-        private int lastUploadedContentHash;
-        private VideoFrame lastUploadedFrame;
-        private long lastUploadedFrameRevision = -1L;
-        private String lastUploadedDisplayKey = "";
-        private long lastUploadMs;
         private WallRenderContext renderContext;
         private String lastRenderContextKey = "";
         private long lastRenderedMs = System.currentTimeMillis();
 
         private ScreenPipeline(ScreenGroupMembership membership, VideoSourceDescriptor descriptor,
-                               VideoSource source, DynamicTextureHandle texture, QualityTier qualityTier) {
+                               ScreenDisplaySettings displaySettings) {
             this.membership = membership;
             this.descriptor = descriptor;
-            this.source = source;
-            this.texture = texture;
-            this.qualityTier = qualityTier;
-            this.gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
+            this.qualityTier = QualityTier.NEAR;
+            int[] size = computeTextureSize(membership.gridWidth(), membership.gridHeight(), qualityTier);
+            this.sharedTexture = acquireSharedTexture(descriptor, displaySettings, qualityTier, size[0], size[1]);
         }
 
         private boolean matches(ScreenGroupMembership other, VideoSourceDescriptor otherDescriptor,
@@ -281,14 +303,11 @@ public final class ScreenTextureManager {
         }
 
         private DynamicTextureHandle texture() {
-            return texture;
+            return sharedTexture.texture();
         }
 
         private int[] frameSize() {
-            return new int[]{
-                    lastFrameWidth > 0 ? lastFrameWidth : source.getWidth(),
-                    lastFrameHeight > 0 ? lastFrameHeight : source.getHeight()
-            };
+            return sharedTexture.frameSize();
         }
 
         private WallRenderContext renderContext() {
@@ -323,103 +342,37 @@ public final class ScreenTextureManager {
             return dx * dx + dy * dy + dz * dz <= maxDist * maxDist;
         }
 
-        private void tick(Level level, Vec3 playerPos) {
-            updateQualityTierIfNeeded(playerPos);
-
-            long nowMs = System.currentTimeMillis();
-            if (!isRecentlyRendered(nowMs)) {
-                source.setActive(false);
-                return;
-            }
-            source.setActive(true);
-
+        private void tick(Level level, Vec3 playerPos, int tickSequence) {
             ScreenDisplaySettings displaySettings = LedScreenBlockEntity.resolveDisplaySettings(level, membership);
-            displayCacheKey = displaySettings.cacheKey();
-            String textureGradingKey = displaySettings.textureColorGradingKey();
-
-            source.tick();
-            VideoFrame frame = source.getCurrentFrame();
-            lastFrameWidth = frame.getWidth();
-            lastFrameHeight = frame.getHeight();
+            updateQualityTierIfNeeded(playerPos, displaySettings);
             updateRenderContextIfNeeded(displaySettings);
 
-            if (frame.getWidth() != source.getWidth() || frame.getHeight() != source.getHeight()) {
-                return;
+            long nowMs = System.currentTimeMillis();
+            if (nowMs - lastRenderedMs <= VISIBLE_UPLOAD_GRACE_MS) {
+                sharedTexture.markRendered(nowMs);
             }
-
-            int maxUploadsPerSecond = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
-            if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
-                long minIntervalMs = 1000L / maxUploadsPerSecond;
-                if (nowMs - lastUploadMs < minIntervalMs) {
-                    return;
-                }
-            }
-
-            long frameRevision = frame.getRevision();
-            if (frame == lastUploadedFrame
-                    && frameRevision == lastUploadedFrameRevision
-                    && textureGradingKey.equals(lastUploadedDisplayKey)) {
-                return;
-            }
-
-            int contentHash = computeUploadContentHash(frame, displaySettings);
-            if (contentHash == lastUploadedContentHash
-                    && textureGradingKey.equals(lastUploadedDisplayKey)) {
-                lastUploadedFrame = frame;
-                lastUploadedFrameRevision = frameRevision;
-                return;
-            }
-
-            if (displaySettings.needsTextureColorGrading()) {
-                ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
-                colorGradingTables.update(displaySettings);
-                DisplayColorGrading.applyInto(frame, gradedFrame, colorGradingTables);
-                texture.upload(gradedFrame);
-            } else {
-                texture.upload(frame);
-            }
-
-            lastUploadedContentHash = contentHash;
-            lastUploadedFrame = frame;
-            lastUploadedFrameRevision = frameRevision;
-            lastUploadedDisplayKey = textureGradingKey;
-            lastUploadMs = nowMs;
+            sharedTexture.tick(tickSequence);
         }
 
-        private boolean isRecentlyRendered(long nowMs) {
-            return nowMs - lastRenderedMs <= VISIBLE_UPLOAD_GRACE_MS;
-        }
-
-        private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {
-            int hash = FrameHasher.sampleHash(frame, FRAME_HASH_SAMPLE_SIZE, FRAME_HASH_SAMPLE_SIZE);
-            if (displaySettings.needsTextureColorGrading()) {
-                hash = 31 * hash + displaySettings.textureColorGradingKey().hashCode();
-            }
-            return hash;
-        }
-
-        private void updateQualityTierIfNeeded(Vec3 playerPos) {
+        private void updateQualityTierIfNeeded(Vec3 playerPos, ScreenDisplaySettings displaySettings) {
             QualityTier desired = qualityTierForPlayer(playerPos);
-            if (desired == qualityTier) {
-                return;
-            }
-
             int[] size = computeTextureSize(membership.gridWidth(), membership.gridHeight(), desired);
-            if (size[0] == source.getWidth() && size[1] == source.getHeight()) {
-                qualityTier = desired;
+            if (desired == qualityTier
+                    && sharedTexture.matches(descriptor, displaySettings)
+                    && sharedTexture.canCover(size[0], size[1])) {
                 return;
             }
 
-            source.dispose();
-            source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, size[0], size[1]);
+            if (!sharedTexture.matches(descriptor, displaySettings)) {
+                releaseSharedTexture(sharedTexture);
+                sharedTexture = acquireSharedTexture(descriptor, displaySettings, desired, size[0], size[1]);
+                qualityTier = desired;
+                lastRenderContextKey = "";
+                return;
+            }
+
+            sharedTexture.ensureCapacity(size[0], size[1]);
             qualityTier = desired;
-            gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
-            lastFrameWidth = 0;
-            lastFrameHeight = 0;
-            lastUploadedContentHash = 0;
-            lastUploadedFrame = null;
-            lastUploadedFrameRevision = -1L;
-            lastUploadedDisplayKey = "";
             lastRenderContextKey = "";
         }
 
@@ -442,6 +395,160 @@ public final class ScreenTextureManager {
                 return QualityTier.MID;
             }
             return QualityTier.FAR;
+        }
+
+        @Override
+        public void close() {
+            releaseSharedTexture(sharedTexture);
+        }
+    }
+
+    private static final class SharedTexturePipeline implements AutoCloseable {
+        private final String key;
+        private final VideoSourceDescriptor descriptor;
+        private final ScreenDisplaySettings textureSettings;
+        private VideoSource source;
+        private final DynamicTextureHandle texture;
+        private VideoFrame gradedFrame;
+        private final DisplayColorGrading.LookupTables colorGradingTables = new DisplayColorGrading.LookupTables();
+
+        private int retainCount;
+        private int lastFrameWidth;
+        private int lastFrameHeight;
+        private int lastUploadedContentHash;
+        private VideoFrame lastUploadedFrame;
+        private long lastUploadedFrameRevision = -1L;
+        private long lastUploadMs;
+        private int lastTickSequence = -1;
+        private long lastRenderedMs = System.currentTimeMillis();
+
+        private SharedTexturePipeline(String key, VideoSourceDescriptor descriptor,
+                                      ScreenDisplaySettings textureSettings, int width, int height) {
+            this.key = key;
+            this.descriptor = descriptor;
+            this.textureSettings = textureSettings;
+            this.source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, width, height);
+            this.texture = new DynamicTextureHandle("shared_" + Integer.toUnsignedString(key.hashCode()));
+            this.gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
+        }
+
+        private String key() {
+            return key;
+        }
+
+        private boolean matches(VideoSourceDescriptor otherDescriptor, ScreenDisplaySettings displaySettings) {
+            return descriptor.cacheKey().equals(otherDescriptor.cacheKey())
+                    && textureSettings.textureColorGradingKey().equals(displaySettings.textureColorGradingKey());
+        }
+
+        private DynamicTextureHandle texture() {
+            return texture;
+        }
+
+        private int[] frameSize() {
+            return new int[]{
+                    lastFrameWidth > 0 ? lastFrameWidth : source.getWidth(),
+                    lastFrameHeight > 0 ? lastFrameHeight : source.getHeight()
+            };
+        }
+
+        private void retain() {
+            retainCount++;
+        }
+
+        private boolean release() {
+            retainCount--;
+            return retainCount <= 0;
+        }
+
+        private boolean canCover(int width, int height) {
+            return width <= source.getWidth() && height <= source.getHeight();
+        }
+
+        private void ensureCapacity(int width, int height) {
+            if (canCover(width, height)) {
+                return;
+            }
+            int targetWidth = Math.max(width, source.getWidth());
+            int targetHeight = Math.max(height, source.getHeight());
+            source.dispose();
+            source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, targetWidth, targetHeight);
+            gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
+            lastFrameWidth = 0;
+            lastFrameHeight = 0;
+            lastUploadedContentHash = 0;
+            lastUploadedFrame = null;
+            lastUploadedFrameRevision = -1L;
+            lastTickSequence = -1;
+        }
+
+        private void markRendered(long nowMs) {
+            lastRenderedMs = nowMs;
+        }
+
+        private void tick(int tickSequence) {
+            if (lastTickSequence == tickSequence) {
+                return;
+            }
+            lastTickSequence = tickSequence;
+
+            long nowMs = System.currentTimeMillis();
+            if (nowMs - lastRenderedMs > VISIBLE_UPLOAD_GRACE_MS) {
+                source.setActive(false);
+                return;
+            }
+            source.setActive(true);
+
+            source.tick();
+            VideoFrame frame = source.getCurrentFrame();
+            lastFrameWidth = frame.getWidth();
+            lastFrameHeight = frame.getHeight();
+
+            if (frame.getWidth() != source.getWidth() || frame.getHeight() != source.getHeight()) {
+                return;
+            }
+
+            int maxUploadsPerSecond = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
+            if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
+                long minIntervalMs = 1000L / maxUploadsPerSecond;
+                if (nowMs - lastUploadMs < minIntervalMs) {
+                    return;
+                }
+            }
+
+            long frameRevision = frame.getRevision();
+            if (frame == lastUploadedFrame && frameRevision == lastUploadedFrameRevision) {
+                return;
+            }
+
+            int contentHash = computeUploadContentHash(frame, textureSettings);
+            if (contentHash == lastUploadedContentHash) {
+                lastUploadedFrame = frame;
+                lastUploadedFrameRevision = frameRevision;
+                return;
+            }
+
+            if (textureSettings.needsTextureColorGrading()) {
+                ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
+                colorGradingTables.update(textureSettings);
+                DisplayColorGrading.applyInto(frame, gradedFrame, colorGradingTables);
+                texture.upload(gradedFrame);
+            } else {
+                texture.upload(frame);
+            }
+
+            lastUploadedContentHash = contentHash;
+            lastUploadedFrame = frame;
+            lastUploadedFrameRevision = frameRevision;
+            lastUploadMs = nowMs;
+        }
+
+        private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {
+            int hash = FrameHasher.sampleHash(frame, FRAME_HASH_SAMPLE_SIZE, FRAME_HASH_SAMPLE_SIZE);
+            if (displaySettings.needsTextureColorGrading()) {
+                hash = 31 * hash + displaySettings.textureColorGradingKey().hashCode();
+            }
+            return hash;
         }
 
         private void ensureGradedFrameSize(int width, int height) {
