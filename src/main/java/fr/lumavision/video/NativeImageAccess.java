@@ -34,32 +34,6 @@ final class NativeImageAccess {
         }
     }
 
-    static boolean copyColorGradedNativeRgbaTo(NativeImage target, int[] nativeRgbaPixels,
-                                               int[] redMap, int[] greenMap, int[] blueMap) {
-        if (PIXELS_FIELD == null) {
-            return false;
-        }
-        try {
-            long address = PIXELS_FIELD.getLong(target);
-            if (address == 0L) {
-                return false;
-            }
-            for (int i = 0; i < nativeRgbaPixels.length; i++) {
-                int nativeRgba = nativeRgbaPixels[i];
-                int red = nativeRgba & 0xFF;
-                int green = (nativeRgba >>> 8) & 0xFF;
-                int blue = (nativeRgba >>> 16) & 0xFF;
-                MemoryUtil.memPutInt(address + ((long) i << 2), (nativeRgba & 0xFF000000)
-                        | (blueMap[blue] << 16)
-                        | (greenMap[green] << 8)
-                        | redMap[red]);
-            }
-            return true;
-        } catch (IllegalAccessException | RuntimeException ignored) {
-            return false;
-        }
-    }
-
     private static Field findPixelsField() {
         try {
             Field field = NativeImage.class.getDeclaredField("pixels");

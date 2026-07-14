@@ -463,6 +463,7 @@ public final class ScreenTextureManager {
         private final ScreenDisplaySettings textureSettings;
         private VideoSource source;
         private final DynamicTextureHandle texture;
+        private VideoFrame gradedFrame;
         private final DisplayColorGrading.LookupTables colorGradingTables = new DisplayColorGrading.LookupTables();
 
         private int retainCount;
@@ -482,6 +483,7 @@ public final class ScreenTextureManager {
             this.textureSettings = textureSettings;
             this.source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, width, height);
             this.texture = new DynamicTextureHandle("shared_" + Integer.toUnsignedString(key.hashCode()));
+            this.gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
         }
 
         private String key() {
@@ -529,6 +531,7 @@ public final class ScreenTextureManager {
             int targetHeight = Math.max(height, source.getHeight());
             source.dispose();
             source = ClientVideoSourceCatalog.INSTANCE.create(descriptor, targetWidth, targetHeight);
+            gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
             lastFrameWidth = 0;
             lastFrameHeight = 0;
             lastUploadedContentHash = 0;
@@ -593,8 +596,14 @@ public final class ScreenTextureManager {
             }
 
             if (textureSettings.needsTextureColorGrading()) {
+                ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
                 colorGradingTables.update(textureSettings);
-                texture.uploadColorGraded(frame, colorGradingTables);
+                long gradeStartNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
+                DisplayColorGrading.applyInto(frame, gradedFrame, colorGradingTables);
+                if (gradeStartNanos != 0L) {
+                    VideoPipelineProfiler.recordColorGrade(System.nanoTime() - gradeStartNanos);
+                }
+                texture.upload(gradedFrame);
             } else {
                 texture.upload(frame);
             }
@@ -620,6 +629,13 @@ public final class ScreenTextureManager {
                 hash = 31 * hash + displaySettings.textureColorGradingKey().hashCode();
             }
             return hash;
+        }
+
+        private void ensureGradedFrameSize(int width, int height) {
+            if (gradedFrame != null && gradedFrame.getWidth() == width && gradedFrame.getHeight() == height) {
+                return;
+            }
+            gradedFrame = new VideoFrame(width, height);
         }
 
         @Override
