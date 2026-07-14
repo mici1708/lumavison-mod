@@ -157,7 +157,9 @@ public final class NdiVideoSource implements VideoSource {
                 LumaVisionMod.LOGGER.error("NDI capture error for '{}'", sourceName, throwable);
             }
         }
-        sleepAfterCaptureError(unknownFrameType ? 100L : 250L);
+        if (!unknownFrameType) {
+            sleepAfterCaptureError(250L);
+        }
     }
 
     private static void sleepAfterCaptureError(long millis) {
