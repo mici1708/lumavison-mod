@@ -4,8 +4,8 @@
         "srcrgb": "srcalpha",
         "dstrgb": "1-srcalpha"
     },
-    "vertex": "lumavision_screen",
-    "fragment": "lumavision_screen",
+    "vertex": "lumavision:lumavision_screen",
+    "fragment": "lumavision:lumavision_screen",
     "attributes": [
         "Position",
         "Color",
