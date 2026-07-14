@@ -2,6 +2,7 @@ package fr.lumavision.client.ndi;
 
 import fr.lumavision.LumaVisionMod;
 import fr.lumavision.config.ModConfig;
+import fr.lumavision.client.video.VideoPipelineProfiler;
 import fr.lumavision.video.VideoFrame;
 import fr.lumavision.video.VideoSource;
 import me.walkerknapp.devolay.DevolayFrameType;
@@ -115,7 +116,11 @@ public final class NdiVideoSource implements VideoSource {
                         if (!shouldConvertFrame()) {
                             continue;
                         }
+                        long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
                         VideoFrame converted = converter.convert(ndiFrame, targetWidth, targetHeight);
+                        if (startNanos != 0L) {
+                            VideoPipelineProfiler.recordNdiConversion(System.nanoTime() - startNanos);
+                        }
                         displayFrame.set(converted);
                         lastConvertedFrameMs = System.currentTimeMillis();
                     } else if (type == DevolayFrameType.ERROR) {

@@ -2,6 +2,7 @@ package fr.lumavision.client.texture;
 
 import fr.lumavision.blockentity.LedScreenBlockEntity;
 import fr.lumavision.client.display.DisplayColorGrading;
+import fr.lumavision.client.video.VideoPipelineProfiler;
 import fr.lumavision.client.video.catalog.ClientVideoSourceCatalog;
 import fr.lumavision.config.ModConfig;
 import fr.lumavision.screen.ScreenDisplaySettings;
@@ -115,6 +116,7 @@ public final class ScreenTextureManager {
             }
             pipeline.tick(level, playerPos, tickSequence, fastCameraMotion);
         }
+        VideoPipelineProfiler.reportIfDue(pipelines.size(), sharedTexturePipelines.size(), sharedTextureReferences());
     }
 
     private static Vec3 playerPosition() {
@@ -249,6 +251,14 @@ public final class ScreenTextureManager {
 
     private static String sharedTextureKey(VideoSourceDescriptor descriptor, ScreenDisplaySettings displaySettings) {
         return descriptor.cacheKey() + "|" + displaySettings.textureColorGradingKey();
+    }
+
+    private int sharedTextureReferences() {
+        int references = 0;
+        for (SharedTexturePipeline pipeline : sharedTexturePipelines.values()) {
+            references += pipeline.retainCount();
+        }
+        return references;
     }
 
     static int[] computeTextureSize(int gridWidth, int gridHeight) {
@@ -500,6 +510,10 @@ public final class ScreenTextureManager {
             retainCount++;
         }
 
+        private int retainCount() {
+            return retainCount;
+        }
+
         private boolean release() {
             retainCount--;
             return retainCount <= 0;
@@ -548,6 +562,7 @@ public final class ScreenTextureManager {
                     if (fastCameraMotion) {
                         source.setActive(false);
                     }
+                    VideoPipelineProfiler.recordSkippedUploadTick();
                     return;
                 }
             }
@@ -564,20 +579,30 @@ public final class ScreenTextureManager {
 
             long frameRevision = frame.getRevision();
             if (frame == lastUploadedFrame && frameRevision == lastUploadedFrameRevision) {
+                VideoPipelineProfiler.recordSkippedDuplicateFrame();
                 return;
             }
 
+            long hashStartNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
             int contentHash = computeUploadContentHash(frame, textureSettings);
+            if (hashStartNanos != 0L) {
+                VideoPipelineProfiler.recordFrameHash(System.nanoTime() - hashStartNanos);
+            }
             if (contentHash == lastUploadedContentHash) {
                 lastUploadedFrame = frame;
                 lastUploadedFrameRevision = frameRevision;
+                VideoPipelineProfiler.recordSkippedDuplicateFrame();
                 return;
             }
 
             if (textureSettings.needsTextureColorGrading()) {
                 ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
                 colorGradingTables.update(textureSettings);
+                long gradeStartNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
                 DisplayColorGrading.applyInto(frame, gradedFrame, colorGradingTables);
+                if (gradeStartNanos != 0L) {
+                    VideoPipelineProfiler.recordColorGrade(System.nanoTime() - gradeStartNanos);
+                }
                 texture.upload(gradedFrame);
             } else {
                 texture.upload(frame);

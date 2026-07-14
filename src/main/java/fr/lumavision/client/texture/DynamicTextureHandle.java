@@ -2,6 +2,7 @@ package fr.lumavision.client.texture;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import fr.lumavision.LumaVisionMod;
+import fr.lumavision.client.video.VideoPipelineProfiler;
 import fr.lumavision.video.VideoFrame;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -37,28 +38,35 @@ public final class DynamicTextureHandle implements AutoCloseable {
     }
 
     public void upload(VideoFrame frame) {
+        long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
         int width = frame.getWidth();
         int height = frame.getHeight();
-        if (width <= 0 || height <= 0) {
-            return;
-        }
+        try {
+            if (width <= 0 || height <= 0) {
+                return;
+            }
 
-        if (uploadedWidth != width || uploadedHeight != height) {
-            recreateTexture(width, height);
-        }
+            if (uploadedWidth != width || uploadedHeight != height) {
+                recreateTexture(width, height);
+            }
 
-        int uploadIndex = 1 - activeTextureIndex;
-        DynamicTexture uploadTexture = textures[uploadIndex];
-        NativeImage pixels = uploadTexture.getPixels();
-        if (pixels == null
-                || pixels.getWidth() != width
-                || pixels.getHeight() != height) {
-            return;
-        }
+            int uploadIndex = 1 - activeTextureIndex;
+            DynamicTexture uploadTexture = textures[uploadIndex];
+            NativeImage pixels = uploadTexture.getPixels();
+            if (pixels == null
+                    || pixels.getWidth() != width
+                    || pixels.getHeight() != height) {
+                return;
+            }
 
-        frame.writeTo(pixels);
-        uploadTexture.upload();
-        activeTextureIndex = uploadIndex;
+            frame.writeTo(pixels);
+            uploadTexture.upload();
+            activeTextureIndex = uploadIndex;
+        } finally {
+            if (startNanos != 0L) {
+                VideoPipelineProfiler.recordTextureUpload(System.nanoTime() - startNanos);
+            }
+        }
     }
 
     private void recreateTexture(int width, int height) {

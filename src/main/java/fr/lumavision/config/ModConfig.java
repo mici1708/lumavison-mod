@@ -18,6 +18,14 @@ public final class ModConfig {
             .comment("Enables verbose logging (textures, networking, rendering, NDI discovery).")
             .define("debugLogging", false);
 
+    public static final ForgeConfigSpec.BooleanValue ENABLE_VIDEO_PROFILING = BUILDER
+            .comment("Logs aggregated video pipeline timings for NDI conversion, color grading, hashing, texture uploads, and sharing.")
+            .define("enableVideoProfiling", false);
+
+    public static final ForgeConfigSpec.IntValue VIDEO_PROFILING_INTERVAL_MS = BUILDER
+            .comment("How often to print video profiling summaries when enableVideoProfiling is true.")
+            .defineInRange("videoProfilingIntervalMs", 5000, 1000, 60000);
+
     public static final ForgeConfigSpec.IntValue MAX_TEXTURE_RESOLUTION = BUILDER
             .comment("Maximum resolution (longest side) for LED screen dynamic textures.")
             .defineInRange("maxTextureResolution", 1024, 64, 4096);
