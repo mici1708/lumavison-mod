@@ -74,6 +74,10 @@ public final class ModConfig {
             .comment("Enables NDI input via Devolay on the client.")
             .define("enableNdi", true);
 
+    public static final ForgeConfigSpec.BooleanValue PREFER_NDI_UYVY = BUILDER
+            .comment("Requests UYVY frames from NDI to avoid the receiver's RGBA conversion step. Disable if colors look wrong.")
+            .define("preferNdiUyvy", true);
+
     public static final ForgeConfigSpec.ConfigValue<String> NDI_DEFAULT_SOURCE = BUILDER
             .comment("Default NDI source name for walls without an explicit sourceId (exact name from discovery).")
             .define("ndiDefaultSource", "");

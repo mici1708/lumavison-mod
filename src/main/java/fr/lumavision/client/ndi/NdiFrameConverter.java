@@ -34,7 +34,9 @@ public final class NdiFrameConverter {
         }
 
         DevolayFrameFourCCType fourCc = ndiFrame.getFourCCType();
-        if (fourCc == DevolayFrameFourCCType.BGRA || fourCc == DevolayFrameFourCCType.BGRX) {
+        if (fourCc == DevolayFrameFourCCType.UYVY) {
+            frame.copyFromUyvy(data, sourceWidth, sourceHeight, ndiFrame.getLineStride());
+        } else if (fourCc == DevolayFrameFourCCType.BGRA || fourCc == DevolayFrameFourCCType.BGRX) {
             frame.copyFromBgrx(data, sourceWidth, sourceHeight, ndiFrame.getLineStride(), fourCc == DevolayFrameFourCCType.BGRA);
         } else if (fourCc == DevolayFrameFourCCType.RGBA || fourCc == DevolayFrameFourCCType.RGBX) {
             frame.copyFromRgbx(data, sourceWidth, sourceHeight, ndiFrame.getLineStride(), fourCc == DevolayFrameFourCCType.RGBA);

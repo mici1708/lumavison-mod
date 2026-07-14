@@ -94,9 +94,12 @@ public final class NdiDiscoveryService {
         DevolaySource[] sources = finder.getCurrentSources();
         for (DevolaySource source : sources) {
             if (source.getSourceName().equals(sourceName)) {
+                DevolayReceiver.ColorFormat colorFormat = ModConfig.PREFER_NDI_UYVY.get()
+                        ? DevolayReceiver.ColorFormat.UYVY_RGBA
+                        : DevolayReceiver.ColorFormat.RGBX_RGBA;
                 return new DevolayReceiver(
                         source,
-                        DevolayReceiver.ColorFormat.RGBX_RGBA,
+                        colorFormat,
                         DevolayReceiver.RECEIVE_BANDWIDTH_HIGHEST,
                         false,
                         "LumaVision"

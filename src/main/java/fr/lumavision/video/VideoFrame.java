@@ -22,6 +22,12 @@ public final class VideoFrame {
     private int mapStride;
     private int[] srcXOffsets;
     private int[] srcRowOffsets;
+    private int uyvyMapSrcW;
+    private int uyvyMapSrcH;
+    private int uyvyMapStride;
+    private int[] uyvyPairOffsets;
+    private boolean[] uyvyOddPixels;
+    private int[] uyvyRowOffsets;
 
     public VideoFrame(int width, int height) {
         if (width <= 0 || height <= 0) {
@@ -136,6 +142,50 @@ public final class VideoFrame {
     }
 
     /**
+     * Copies UYVY 4:2:2 data into this frame, converting directly to the NativeImage RGBA layout.
+     */
+    public void copyFromUyvy(ByteBuffer data, int srcW, int srcH, int lineStride) {
+        int dstW = width;
+        int dstH = height;
+        int rowBytes = Math.max(lineStride, srcW * 2);
+        ensureUyvyScaleMaps(srcW, srcH, rowBytes);
+        int rowBase = 0;
+        long baseAddress = bufferBaseAddress(data);
+        for (int y = 0; y < dstH; y++) {
+            int srcRowBase = uyvyRowOffsets[y];
+            if (srcRowBase + srcW * 2 > data.limit()) {
+                break;
+            }
+            for (int x = 0; x < dstW; x++) {
+                int pairIndex = srcRowBase + uyvyPairOffsets[x];
+                if (pairIndex + 3 >= data.limit()) {
+                    break;
+                }
+
+                int u;
+                int y0;
+                int v;
+                int y1;
+                if (baseAddress != 0L) {
+                    long address = baseAddress + pairIndex;
+                    u = MemoryUtil.memGetByte(address) & 0xFF;
+                    y0 = MemoryUtil.memGetByte(address + 1L) & 0xFF;
+                    v = MemoryUtil.memGetByte(address + 2L) & 0xFF;
+                    y1 = MemoryUtil.memGetByte(address + 3L) & 0xFF;
+                } else {
+                    u = data.get(pairIndex) & 0xFF;
+                    y0 = data.get(pairIndex + 1) & 0xFF;
+                    v = data.get(pairIndex + 2) & 0xFF;
+                    y1 = data.get(pairIndex + 3) & 0xFF;
+                }
+                pixels[rowBase + x] = yuvToNativeRgba(uyvyOddPixels[x] ? y1 : y0, u, v);
+            }
+            rowBase += dstW;
+        }
+        markDirty();
+    }
+
+    /**
      * Copies this frame into a {@link NativeImage} for upload to a Minecraft dynamic texture.
      * NativeImage expects ABGR byte order per pixel.
      */
@@ -208,6 +258,26 @@ public final class VideoFrame {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    private static int yuvToNativeRgba(int y, int u, int v) {
+        int c = Math.max(0, y - 16);
+        int d = u - 128;
+        int e = v - 128;
+        int r = clamp8((298 * c + 459 * e + 128) >> 8);
+        int g = clamp8((298 * c - 55 * d - 136 * e + 128) >> 8);
+        int b = clamp8((298 * c + 541 * d + 128) >> 8);
+        return 0xFF000000 | (b << 16) | (g << 8) | r;
+    }
+
+    private static int clamp8(int value) {
+        if (value < 0) {
+            return 0;
+        }
+        if (value > 255) {
+            return 255;
+        }
+        return value;
+    }
+
     private void ensureScaleMaps(int srcW, int srcH, int lineStride) {
         int rowBytes = Math.max(lineStride, srcW * 4);
         if (srcXOffsets != null
@@ -227,6 +297,31 @@ public final class VideoFrame {
         }
         for (int y = 0; y < height; y++) {
             srcRowOffsets[y] = (y * srcH / height) * rowBytes;
+        }
+    }
+
+    private void ensureUyvyScaleMaps(int srcW, int srcH, int rowBytes) {
+        if (uyvyPairOffsets != null
+                && uyvyOddPixels != null
+                && uyvyRowOffsets != null
+                && uyvyMapSrcW == srcW
+                && uyvyMapSrcH == srcH
+                && uyvyMapStride == rowBytes) {
+            return;
+        }
+        uyvyMapSrcW = srcW;
+        uyvyMapSrcH = srcH;
+        uyvyMapStride = rowBytes;
+        uyvyPairOffsets = new int[width];
+        uyvyOddPixels = new boolean[width];
+        uyvyRowOffsets = new int[height];
+        for (int x = 0; x < width; x++) {
+            int srcX = x * srcW / width;
+            uyvyPairOffsets[x] = (srcX & ~1) * 2;
+            uyvyOddPixels[x] = (srcX & 1) != 0;
+        }
+        for (int y = 0; y < height; y++) {
+            uyvyRowOffsets[y] = (y * srcH / height) * rowBytes;
         }
     }
 
