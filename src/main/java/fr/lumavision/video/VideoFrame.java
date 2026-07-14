@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 
 /**
  * Single frame of pixel data. Stored internally in NativeImage RGBA integer layout
@@ -151,6 +152,21 @@ public final class VideoFrame {
                 target.setPixelRGBA(x, y, pixels[rowBase + x]);
             }
         }
+    }
+
+    /**
+     * Copies the native RGBA integer layout into a byte buffer ready for OpenGL RGBA uploads.
+     */
+    public void writeNativeRgbaTo(ByteBuffer target) {
+        int byteCount = pixels.length * Integer.BYTES;
+        if (target.capacity() < byteCount) {
+            throw new IllegalArgumentException("Target buffer too small");
+        }
+        target.clear();
+        target.limit(byteCount);
+        IntBuffer ints = target.asIntBuffer();
+        ints.put(pixels, 0, pixels.length);
+        target.position(0);
     }
 
     public void copyColorGradedFrom(VideoFrame source, int[] redMap, int[] greenMap, int[] blueMap) {
