@@ -27,7 +27,17 @@ public final class DisplayColorGrading {
     }
 
     public static int[] vertexColor(ScreenDisplaySettings settings) {
-        return new int[]{255, 255, 255, 255};
+        float dimming = Math.min(1.0F, settings.brightness());
+        float colorTemp = settings.colorTemp();
+        float red = Math.min(1.0F, dimming * (1.0F + colorTemp * 0.25F));
+        float green = dimming;
+        float blue = Math.min(1.0F, dimming * (1.0F - colorTemp * 0.25F));
+        return new int[]{
+                toByte(red),
+                toByte(green),
+                toByte(blue),
+                255
+        };
     }
 
     public static final class LookupTables {
@@ -47,23 +57,19 @@ public final class DisplayColorGrading {
     }
 
     private static void buildLookupTables(ScreenDisplaySettings settings, int[] redMap, int[] greenMap, int[] blueMap) {
-        float brightness = settings.brightness();
+        float brightness = Math.max(1.0F, settings.brightness());
         float contrast = settings.contrast();
         float gamma = settings.gamma();
-        float colorTemp = settings.colorTemp();
         float invGamma = 1.0F / gamma;
-
-        float warmR = 1.0F + colorTemp * 0.25F;
-        float warmB = 1.0F - colorTemp * 0.25F;
 
         for (int i = 0; i < 256; i++) {
             float channel = i / 255.0F;
             redMap[i] = toByte((float) Math.pow(Math.max(0.0F,
-                    applyContrast(channel, contrast) * brightness * warmR), invGamma));
+                    applyContrast(channel, contrast) * brightness), invGamma));
             greenMap[i] = toByte((float) Math.pow(Math.max(0.0F,
                     applyContrast(channel, contrast) * brightness), invGamma));
             blueMap[i] = toByte((float) Math.pow(Math.max(0.0F,
-                    applyContrast(channel, contrast) * brightness * warmB), invGamma));
+                    applyContrast(channel, contrast) * brightness), invGamma));
         }
     }
 
