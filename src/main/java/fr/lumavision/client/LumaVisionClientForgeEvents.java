@@ -1,12 +1,11 @@
 package fr.lumavision.client;
 
 import fr.lumavision.LumaVisionMod;
-import fr.lumavision.client.ndi.NdiProvider;
 import fr.lumavision.client.texture.ScreenTextureManager;
-import fr.lumavision.config.ModConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -29,6 +28,17 @@ public final class LumaVisionClientForgeEvents {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level != null) {
             ScreenTextureManager.getInstance().tick(minecraft.level);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRenderLevelStage(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null && !minecraft.isPaused()) {
+            ScreenTextureManager.getInstance().renderFrameTick(minecraft.level);
         }
     }
 

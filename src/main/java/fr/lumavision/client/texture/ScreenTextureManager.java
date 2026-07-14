@@ -119,6 +119,19 @@ public final class ScreenTextureManager {
         VideoPipelineProfiler.reportIfDue(pipelines.size(), sharedTexturePipelines.size(), sharedTextureReferences());
     }
 
+    public void renderFrameTick(Level level) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        Vec3 playerPos = player == null ? null : player.position();
+        tickSequence++;
+        for (ScreenPipeline pipeline : pipelines.values()) {
+            if (playerPos != null && !pipeline.isWithinTickRange(playerPos)) {
+                continue;
+            }
+            pipeline.tick(level, playerPos, tickSequence, false);
+        }
+        VideoPipelineProfiler.reportIfDue(pipelines.size(), sharedTexturePipelines.size(), sharedTextureReferences());
+    }
+
     private static Vec3 playerPosition() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player == null ? null : player.position();
