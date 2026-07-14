@@ -148,61 +148,20 @@ public final class VideoFrame {
         int dstW = width;
         int dstH = height;
         int rowBytes = Math.max(lineStride, srcW * 2);
-        long baseAddress = bufferBaseAddress(data);
-        if (dstW == srcW && dstH == srcH) {
-            copyFromUyvyUnscaled(data, rowBytes, baseAddress);
-            return;
-        }
         ensureUyvyScaleMaps(srcW, srcH, rowBytes);
         int rowBase = 0;
+        long baseAddress = bufferBaseAddress(data);
         for (int y = 0; y < dstH; y++) {
             int srcRowBase = uyvyRowOffsets[y];
             if (srcRowBase + srcW * 2 > data.limit()) {
                 break;
             }
-            int lastPairIndex = -1;
-            int u = 0;
-            int y0 = 0;
-            int v = 0;
-            int y1 = 0;
             for (int x = 0; x < dstW; x++) {
                 int pairIndex = srcRowBase + uyvyPairOffsets[x];
                 if (pairIndex + 3 >= data.limit()) {
                     break;
                 }
 
-                if (pairIndex != lastPairIndex) {
-                    lastPairIndex = pairIndex;
-                    if (baseAddress != 0L) {
-                        long address = baseAddress + pairIndex;
-                        u = MemoryUtil.memGetByte(address) & 0xFF;
-                        y0 = MemoryUtil.memGetByte(address + 1L) & 0xFF;
-                        v = MemoryUtil.memGetByte(address + 2L) & 0xFF;
-                        y1 = MemoryUtil.memGetByte(address + 3L) & 0xFF;
-                    } else {
-                        u = data.get(pairIndex) & 0xFF;
-                        y0 = data.get(pairIndex + 1) & 0xFF;
-                        v = data.get(pairIndex + 2) & 0xFF;
-                        y1 = data.get(pairIndex + 3) & 0xFF;
-                    }
-                }
-                pixels[rowBase + x] = yuvToNativeRgba(uyvyOddPixels[x] ? y1 : y0, u, v);
-            }
-            rowBase += dstW;
-        }
-        markDirty();
-    }
-
-    private void copyFromUyvyUnscaled(ByteBuffer data, int rowBytes, long baseAddress) {
-        int limit = data.limit();
-        for (int y = 0, rowBase = 0; y < height; y++, rowBase += width) {
-            int srcRowBase = y * rowBytes;
-            if (srcRowBase + width * 2 > limit) {
-                break;
-            }
-            int x = 0;
-            for (; x + 1 < width; x += 2) {
-                int pairIndex = srcRowBase + x * 2;
                 int u;
                 int y0;
                 int v;
@@ -219,28 +178,9 @@ public final class VideoFrame {
                     v = data.get(pairIndex + 2) & 0xFF;
                     y1 = data.get(pairIndex + 3) & 0xFF;
                 }
-                pixels[rowBase + x] = yuvToNativeRgba(y0, u, v);
-                pixels[rowBase + x + 1] = yuvToNativeRgba(y1, u, v);
+                pixels[rowBase + x] = yuvToNativeRgba(uyvyOddPixels[x] ? y1 : y0, u, v);
             }
-            if (x < width) {
-                int pairIndex = srcRowBase + (x & ~1) * 2;
-                if (pairIndex + 3 < limit) {
-                    int u;
-                    int y0;
-                    int v;
-                    if (baseAddress != 0L) {
-                        long address = baseAddress + pairIndex;
-                        u = MemoryUtil.memGetByte(address) & 0xFF;
-                        y0 = MemoryUtil.memGetByte(address + 1L) & 0xFF;
-                        v = MemoryUtil.memGetByte(address + 2L) & 0xFF;
-                    } else {
-                        u = data.get(pairIndex) & 0xFF;
-                        y0 = data.get(pairIndex + 1) & 0xFF;
-                        v = data.get(pairIndex + 2) & 0xFF;
-                    }
-                    pixels[rowBase + x] = yuvToNativeRgba(y0, u, v);
-                }
-            }
+            rowBase += dstW;
         }
         markDirty();
     }
