@@ -38,7 +38,6 @@ public final class ScreenTextureManager {
     private static final int[] FALLBACK_FRAME_SIZE = {16, 16};
     /** Pipelines beyond this distance skip source tick and GPU upload. */
     private static final int MAX_PIPELINE_TICK_DISTANCE = 96;
-    private static final int FRAME_HASH_SAMPLE_SIZE = 8;
     private static final int PRUNE_INTERVAL_TICKS = 40;
     private static final int FAST_CAMERA_UPLOAD_COOLDOWN_TICKS = 8;
     private static final long VISIBLE_UPLOAD_GRACE_MS = 1500L;
@@ -482,7 +481,6 @@ public final class ScreenTextureManager {
         private int retainCount;
         private int lastFrameWidth;
         private int lastFrameHeight;
-        private int lastUploadedContentHash;
         private VideoFrame lastUploadedFrame;
         private long lastUploadedFrameRevision = -1L;
         private long lastUploadMs;
@@ -547,7 +545,6 @@ public final class ScreenTextureManager {
             gradedFrame = new VideoFrame(source.getWidth(), source.getHeight());
             lastFrameWidth = 0;
             lastFrameHeight = 0;
-            lastUploadedContentHash = 0;
             lastUploadedFrame = null;
             lastUploadedFrameRevision = -1L;
             lastTickSequence = -1;
@@ -596,18 +593,6 @@ public final class ScreenTextureManager {
                 return;
             }
 
-            long hashStartNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
-            int contentHash = computeUploadContentHash(frame, textureSettings);
-            if (hashStartNanos != 0L) {
-                VideoPipelineProfiler.recordFrameHash(System.nanoTime() - hashStartNanos);
-            }
-            if (contentHash == lastUploadedContentHash) {
-                lastUploadedFrame = frame;
-                lastUploadedFrameRevision = frameRevision;
-                VideoPipelineProfiler.recordSkippedDuplicateFrame();
-                return;
-            }
-
             if (textureSettings.needsTextureColorGrading()) {
                 ensureGradedFrameSize(frame.getWidth(), frame.getHeight());
                 colorGradingTables.update(textureSettings);
@@ -621,7 +606,6 @@ public final class ScreenTextureManager {
                 texture.upload(frame);
             }
 
-            lastUploadedContentHash = contentHash;
             lastUploadedFrame = frame;
             lastUploadedFrameRevision = frameRevision;
             lastUploadMs = nowMs;
@@ -634,14 +618,6 @@ public final class ScreenTextureManager {
             }
             int fastCameraMax = ModConfig.FAST_CAMERA_MAX_TEXTURE_UPDATES_PER_SECOND.get();
             return configuredMax <= 0 ? fastCameraMax : Math.min(configuredMax, fastCameraMax);
-        }
-
-        private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {
-            int hash = FrameHasher.sampleHash(frame, FRAME_HASH_SAMPLE_SIZE, FRAME_HASH_SAMPLE_SIZE);
-            if (displaySettings.needsTextureColorGrading()) {
-                hash = 31 * hash + displaySettings.textureColorGradingKey().hashCode();
-            }
-            return hash;
         }
 
         private void ensureGradedFrameSize(int width, int height) {
