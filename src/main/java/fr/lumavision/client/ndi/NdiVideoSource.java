@@ -113,7 +113,8 @@ public final class NdiVideoSource implements VideoSource {
                 try {
                     DevolayFrameType type = receiver.receiveCapture(ndiFrame, null, null, timeout);
                     if (type == DevolayFrameType.VIDEO) {
-                        if (!shouldConvertFrame()) {
+                        long receivedFrameMs = System.currentTimeMillis();
+                        if (!shouldConvertFrame(receivedFrameMs)) {
                             continue;
                         }
                         long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
@@ -122,7 +123,7 @@ public final class NdiVideoSource implements VideoSource {
                             VideoPipelineProfiler.recordNdiConversion(System.nanoTime() - startNanos);
                         }
                         displayFrame.set(converted);
-                        lastConvertedFrameMs = System.currentTimeMillis();
+                        lastConvertedFrameMs = receivedFrameMs;
                     } else if (type == DevolayFrameType.ERROR) {
                         LumaVisionMod.LOGGER.warn("NDI connection lost for '{}'", sourceName);
                     }
@@ -170,7 +171,7 @@ public final class NdiVideoSource implements VideoSource {
         }
     }
 
-    private boolean shouldConvertFrame() {
+    private boolean shouldConvertFrame(long nowMs) {
         if (!active) {
             return false;
         }
@@ -179,6 +180,6 @@ public final class NdiVideoSource implements VideoSource {
             return true;
         }
         long minIntervalMs = Math.max(1L, 1000L / maxFramesPerSecond);
-        return System.currentTimeMillis() - lastConvertedFrameMs >= minIntervalMs;
+        return nowMs - lastConvertedFrameMs >= minIntervalMs;
     }
 }
