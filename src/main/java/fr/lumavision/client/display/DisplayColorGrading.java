@@ -44,6 +44,18 @@ public final class DisplayColorGrading {
             cacheKey = newCacheKey;
             buildLookupTables(settings, redMap, greenMap, blueMap);
         }
+
+        public int[] redMap() {
+            return redMap;
+        }
+
+        public int[] greenMap() {
+            return greenMap;
+        }
+
+        public int[] blueMap() {
+            return blueMap;
+        }
     }
 
     private static void buildLookupTables(ScreenDisplaySettings settings, int[] redMap, int[] greenMap, int[] blueMap) {

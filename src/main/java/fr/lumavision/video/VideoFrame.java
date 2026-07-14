@@ -203,6 +203,27 @@ public final class VideoFrame {
         }
     }
 
+    public void writeColorGradedTo(NativeImage target, int[] redMap, int[] greenMap, int[] blueMap) {
+        if (target.getWidth() != width || target.getHeight() != height) {
+            throw new IllegalArgumentException("Target image size mismatch");
+        }
+        if (NativeImageAccess.copyColorGradedNativeRgbaTo(target, pixels, redMap, greenMap, blueMap)) {
+            return;
+        }
+        for (int y = 0, rowBase = 0; y < height; y++, rowBase += width) {
+            for (int x = 0; x < width; x++) {
+                int nativeRgba = pixels[rowBase + x];
+                int red = nativeRgba & 0xFF;
+                int green = (nativeRgba >>> 8) & 0xFF;
+                int blue = (nativeRgba >>> 16) & 0xFF;
+                target.setPixelRGBA(x, y, (nativeRgba & 0xFF000000)
+                        | (blueMap[blue] << 16)
+                        | (greenMap[green] << 8)
+                        | redMap[red]);
+            }
+        }
+    }
+
     public void copyColorGradedFrom(VideoFrame source, int[] redMap, int[] greenMap, int[] blueMap) {
         if (source.width != width || source.height != height) {
             throw new IllegalArgumentException("Frame size mismatch");

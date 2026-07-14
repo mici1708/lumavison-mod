@@ -2,6 +2,7 @@ package fr.lumavision.client.texture;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import fr.lumavision.LumaVisionMod;
+import fr.lumavision.client.display.DisplayColorGrading;
 import fr.lumavision.client.video.VideoPipelineProfiler;
 import fr.lumavision.video.VideoFrame;
 import net.minecraft.client.Minecraft;
@@ -39,34 +40,74 @@ public final class DynamicTextureHandle implements AutoCloseable {
 
     public void upload(VideoFrame frame) {
         long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
-        int width = frame.getWidth();
-        int height = frame.getHeight();
         try {
-            if (width <= 0 || height <= 0) {
+            DynamicTexture uploadTexture = prepareUploadTexture(frame);
+            if (uploadTexture == null) {
                 return;
             }
 
-            if (uploadedWidth != width || uploadedHeight != height) {
-                recreateTexture(width, height);
-            }
-
-            int uploadIndex = 1 - activeTextureIndex;
-            DynamicTexture uploadTexture = textures[uploadIndex];
             NativeImage pixels = uploadTexture.getPixels();
-            if (pixels == null
-                    || pixels.getWidth() != width
-                    || pixels.getHeight() != height) {
+            if (pixels == null) {
                 return;
             }
 
             frame.writeTo(pixels);
             uploadTexture.upload();
-            activeTextureIndex = uploadIndex;
+            activeTextureIndex = 1 - activeTextureIndex;
         } finally {
             if (startNanos != 0L) {
                 VideoPipelineProfiler.recordTextureUpload(System.nanoTime() - startNanos);
             }
         }
+    }
+
+    public void uploadColorGraded(VideoFrame frame, DisplayColorGrading.LookupTables tables) {
+        long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
+        try {
+            DynamicTexture uploadTexture = prepareUploadTexture(frame);
+            if (uploadTexture == null) {
+                return;
+            }
+
+            NativeImage pixels = uploadTexture.getPixels();
+            if (pixels == null) {
+                return;
+            }
+
+            long gradeStartNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
+            frame.writeColorGradedTo(pixels, tables.redMap(), tables.greenMap(), tables.blueMap());
+            if (gradeStartNanos != 0L) {
+                VideoPipelineProfiler.recordColorGrade(System.nanoTime() - gradeStartNanos);
+            }
+            uploadTexture.upload();
+            activeTextureIndex = 1 - activeTextureIndex;
+        } finally {
+            if (startNanos != 0L) {
+                VideoPipelineProfiler.recordTextureUpload(System.nanoTime() - startNanos);
+            }
+        }
+    }
+
+    private DynamicTexture prepareUploadTexture(VideoFrame frame) {
+        int width = frame.getWidth();
+        int height = frame.getHeight();
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
+        if (uploadedWidth != width || uploadedHeight != height) {
+            recreateTexture(width, height);
+        }
+
+        int uploadIndex = 1 - activeTextureIndex;
+        DynamicTexture uploadTexture = textures[uploadIndex];
+        NativeImage pixels = uploadTexture.getPixels();
+        if (pixels == null
+                || pixels.getWidth() != width
+                || pixels.getHeight() != height) {
+            return null;
+        }
+        return uploadTexture;
     }
 
     private void recreateTexture(int width, int height) {
