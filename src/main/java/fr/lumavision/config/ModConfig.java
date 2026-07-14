@@ -83,8 +83,8 @@ public final class ModConfig {
             .define("enableNdi", true);
 
     public static final ForgeConfigSpec.BooleanValue PREFER_NDI_UYVY = BUILDER
-            .comment("Requests UYVY frames from NDI to avoid the receiver's RGBA conversion step. Disable if colors look wrong.")
-            .define("preferNdiUyvy", true);
+            .comment("Requests UYVY frames from NDI. RGBX is usually faster inside Minecraft because it avoids Java YUV conversion.")
+            .define("preferNdiUyvy", false);
 
     public static final ForgeConfigSpec.ConfigValue<String> NDI_DEFAULT_SOURCE = BUILDER
             .comment("Default NDI source name for walls without an explicit sourceId (exact name from discovery).")
