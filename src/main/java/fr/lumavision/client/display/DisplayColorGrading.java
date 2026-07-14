@@ -40,6 +40,15 @@ public final class DisplayColorGrading {
         };
     }
 
+    public static int brightnessBoostAlpha(ScreenDisplaySettings settings) {
+        float brightness = settings.brightness();
+        if (brightness <= 1.0F) {
+            return 0;
+        }
+        float boost = Math.min(0.45F, (brightness - 1.0F) * 0.18F);
+        return toByte(boost);
+    }
+
     public static final class LookupTables {
         private final int[] redMap = new int[256];
         private final int[] greenMap = new int[256];
@@ -57,7 +66,6 @@ public final class DisplayColorGrading {
     }
 
     private static void buildLookupTables(ScreenDisplaySettings settings, int[] redMap, int[] greenMap, int[] blueMap) {
-        float brightness = Math.max(1.0F, settings.brightness());
         float contrast = settings.contrast();
         float gamma = settings.gamma();
         float invGamma = 1.0F / gamma;
@@ -65,11 +73,11 @@ public final class DisplayColorGrading {
         for (int i = 0; i < 256; i++) {
             float channel = i / 255.0F;
             redMap[i] = toByte((float) Math.pow(Math.max(0.0F,
-                    applyContrast(channel, contrast) * brightness), invGamma));
+                    applyContrast(channel, contrast)), invGamma));
             greenMap[i] = toByte((float) Math.pow(Math.max(0.0F,
-                    applyContrast(channel, contrast) * brightness), invGamma));
+                    applyContrast(channel, contrast)), invGamma));
             blueMap[i] = toByte((float) Math.pow(Math.max(0.0F,
-                    applyContrast(channel, contrast) * brightness), invGamma));
+                    applyContrast(channel, contrast)), invGamma));
         }
     }
 

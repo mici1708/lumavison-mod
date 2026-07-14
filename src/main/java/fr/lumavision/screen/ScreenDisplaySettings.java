@@ -70,14 +70,14 @@ public record ScreenDisplaySettings(
     }
 
     public boolean needsTextureColorGrading() {
-        return brightness > 1.0F || contrast != 1.0F || gamma != 1.0F;
+        return contrast != 1.0F || gamma != 1.0F;
     }
 
     public String textureColorGradingKey() {
         if (!needsTextureColorGrading()) {
             return "";
         }
-        return Math.max(1.0F, brightness) + "|" + contrast + "|" + gamma;
+        return contrast + "|" + gamma;
     }
 
     public String cacheKey() {

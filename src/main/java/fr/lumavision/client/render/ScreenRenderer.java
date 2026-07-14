@@ -74,6 +74,20 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
                 mapped.topLeftU(), mapped.topLeftV(),
                 vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3],
                 LightTexture.FULL_BRIGHT, packedOverlay);
+
+        int boostAlpha = DisplayColorGrading.brightnessBoostAlpha(settings);
+        if (boostAlpha > 0) {
+            VertexConsumer boostConsumer = bufferSource.getBuffer(RenderType.entityTranslucent(
+                    ScreenTextureManager.getInstance().getWhiteTexture()));
+            drawFacingQuad(boostConsumer, poseStack.last(), facing,
+                    mapped.quadX0(), mapped.quadY0(), mapped.quadX1(), mapped.quadY1(), FACE_EPSILON,
+                    0.0F, 1.0F,
+                    1.0F, 1.0F,
+                    1.0F, 0.0F,
+                    0.0F, 0.0F,
+                    255, 255, 255, boostAlpha,
+                    LightTexture.FULL_BRIGHT, packedOverlay);
+        }
     }
 
     private static void drawFacingQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction facing,

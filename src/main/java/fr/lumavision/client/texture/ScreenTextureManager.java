@@ -55,6 +55,7 @@ public final class ScreenTextureManager {
     private final Map<String, SharedTexturePipeline> sharedTexturePipelines = new HashMap<>();
     private final Set<BlockPos> pendingOrigins = new HashSet<>();
     private DynamicTextureHandle fallbackTexture;
+    private DynamicTextureHandle whiteTexture;
     private int pruneTickCounter;
     private int tickSequence;
     private boolean hasLastCameraAngles;
@@ -89,6 +90,10 @@ public final class ScreenTextureManager {
     public WallRenderContext getWallRenderContext(long groupKey) {
         ScreenPipeline pipeline = pipelines.get(groupKey);
         return pipeline == null ? null : pipeline.renderContext();
+    }
+
+    public ResourceLocation getWhiteTexture() {
+        return whiteTexture().location();
     }
 
     public record WallRenderContext(
@@ -173,6 +178,10 @@ public final class ScreenTextureManager {
         if (fallbackTexture != null) {
             fallbackTexture.close();
             fallbackTexture = null;
+        }
+        if (whiteTexture != null) {
+            whiteTexture.close();
+            whiteTexture = null;
         }
     }
 
@@ -305,6 +314,16 @@ public final class ScreenTextureManager {
             fallbackTexture = new DynamicTextureHandle("fallback");
         }
         return fallbackTexture;
+    }
+
+    private DynamicTextureHandle whiteTexture() {
+        if (whiteTexture == null) {
+            whiteTexture = new DynamicTextureHandle("white");
+            VideoFrame frame = new VideoFrame(1, 1);
+            frame.fill(0xFFFFFFFF);
+            whiteTexture.upload(frame);
+        }
+        return whiteTexture;
     }
 
     private void pruneInvalid(Level level) {
