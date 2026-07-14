@@ -545,7 +545,9 @@ public final class ScreenTextureManager {
             if (maxUploadsPerSecond > 0 && lastUploadMs > 0) {
                 long minIntervalMs = 1000L / maxUploadsPerSecond;
                 if (nowMs - lastUploadMs < minIntervalMs) {
-                    source.setActive(false);
+                    if (fastCameraMotion) {
+                        source.setActive(false);
+                    }
                     return;
                 }
             }
@@ -589,22 +591,11 @@ public final class ScreenTextureManager {
 
         private static int effectiveMaxUploadsPerSecond(boolean fastCameraMotion) {
             int configuredMax = ModConfig.MAX_TEXTURE_UPDATES_PER_SECOND.get();
-            int effectiveMax = configuredMax;
-
-            if (fastCameraMotion && ModConfig.ENABLE_ADAPTIVE_UPLOAD_THROTTLE.get()) {
-                int fastCameraMax = ModConfig.FAST_CAMERA_MAX_TEXTURE_UPDATES_PER_SECOND.get();
-                effectiveMax = effectiveMax <= 0 ? fastCameraMax : Math.min(effectiveMax, fastCameraMax);
+            if (!fastCameraMotion || !ModConfig.ENABLE_ADAPTIVE_UPLOAD_THROTTLE.get()) {
+                return configuredMax;
             }
-
-            if (ModConfig.ENABLE_FPS_UPLOAD_GOVERNOR.get()) {
-                int minecraftFps = Minecraft.getInstance().getFps();
-                if (minecraftFps > 0 && minecraftFps < ModConfig.FPS_GOVERNOR_TARGET_FPS.get()) {
-                    int governorMax = ModConfig.FPS_GOVERNOR_MAX_TEXTURE_UPDATES_PER_SECOND.get();
-                    effectiveMax = effectiveMax <= 0 ? governorMax : Math.min(effectiveMax, governorMax);
-                }
-            }
-
-            return effectiveMax;
+            int fastCameraMax = ModConfig.FAST_CAMERA_MAX_TEXTURE_UPDATES_PER_SECOND.get();
+            return configuredMax <= 0 ? fastCameraMax : Math.min(configuredMax, fastCameraMax);
         }
 
         private static int computeUploadContentHash(VideoFrame frame, ScreenDisplaySettings displaySettings) {

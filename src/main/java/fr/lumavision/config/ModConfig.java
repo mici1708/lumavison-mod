@@ -46,18 +46,6 @@ public final class ModConfig {
             .comment("Camera angle change per client tick that enables the temporary fast-camera upload limit.")
             .defineInRange("fastCameraThresholdDegreesPerTick", 18, 1, 180);
 
-    public static final ForgeConfigSpec.BooleanValue ENABLE_FPS_UPLOAD_GOVERNOR = BUILDER
-            .comment("Automatically lowers LED texture updates when Minecraft FPS falls below the configured target.")
-            .define("enableFpsUploadGovernor", true);
-
-    public static final ForgeConfigSpec.IntValue FPS_GOVERNOR_TARGET_FPS = BUILDER
-            .comment("Minecraft FPS target used by the LED upload governor.")
-            .defineInRange("fpsGovernorTargetFps", 85, 30, 240);
-
-    public static final ForgeConfigSpec.IntValue FPS_GOVERNOR_MAX_TEXTURE_UPDATES_PER_SECOND = BUILDER
-            .comment("Maximum LED texture uploads per second while Minecraft is below the governor FPS target.")
-            .defineInRange("fpsGovernorMaxTextureUpdatesPerSecond", 30, 1, 60);
-
     public static final ForgeConfigSpec.IntValue MAX_NDI_CAPTURE_FRAMES_PER_SECOND = BUILDER
             .comment("Maximum NDI frames converted per second per active wall (0 = unlimited).")
             .defineInRange("maxNdiCaptureFramesPerSecond", 30, 0, 60);
