@@ -11,7 +11,6 @@ import fr.lumavision.screen.ScreenDisplaySettings;
 import fr.lumavision.screen.ScreenGroupMembership;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
@@ -65,28 +64,16 @@ public final class ScreenRenderer implements BlockEntityRenderer<LedScreenBlockE
 
         float quadY1 = facing == Direction.DOWN ? -group.gridHeight() : group.gridHeight();
         DisplayUvMapper.MappedUv mapped = DisplayUvMapper.mapWall(group, settings, frameWidth, frameHeight, quadY1);
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityCutoutNoCull(screenTexture));
+        int boostAlpha = DisplayColorGrading.brightnessBoostAlpha(settings);
+        VertexConsumer consumer = bufferSource.getBuffer(LumaVisionRenderTypes.screen(screenTexture));
         drawFacingQuad(consumer, poseStack.last(), facing,
                 mapped.quadX0(), mapped.quadY0(), mapped.quadX1(), mapped.quadY1(), FACE_EPSILON,
                 mapped.bottomLeftU(), mapped.bottomLeftV(),
                 mapped.bottomRightU(), mapped.bottomRightV(),
                 mapped.topRightU(), mapped.topRightV(),
                 mapped.topLeftU(), mapped.topLeftV(),
-                vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3],
+                vertexColor[0], vertexColor[1], vertexColor[2], boostAlpha,
                 LightTexture.FULL_BRIGHT, packedOverlay);
-
-        int boostAlpha = DisplayColorGrading.brightnessBoostAlpha(settings);
-        if (boostAlpha > 0) {
-            VertexConsumer boostConsumer = bufferSource.getBuffer(LumaVisionRenderTypes.additiveScreen(screenTexture));
-            drawFacingQuad(boostConsumer, poseStack.last(), facing,
-                    mapped.quadX0(), mapped.quadY0(), mapped.quadX1(), mapped.quadY1(), FACE_EPSILON,
-                    mapped.bottomLeftU(), mapped.bottomLeftV(),
-                    mapped.bottomRightU(), mapped.bottomRightV(),
-                    mapped.topRightU(), mapped.topRightV(),
-                    mapped.topLeftU(), mapped.topLeftV(),
-                    vertexColor[0], vertexColor[1], vertexColor[2], boostAlpha,
-                    LightTexture.FULL_BRIGHT, packedOverlay);
-        }
     }
 
     private static void drawFacingQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction facing,
