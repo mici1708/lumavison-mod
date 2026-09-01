@@ -11,6 +11,7 @@ import me.walkerknapp.devolay.DevolayVideoFrame;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -117,6 +118,7 @@ public final class NdiVideoSource implements VideoSource {
                         if (!shouldConvertFrame(receivedFrameMs)) {
                             continue;
                         }
+                        VideoPipelineProfiler.recordNdiFrameInfo(frameInfo(ndiFrame, targetWidth, targetHeight));
                         long startNanos = VideoPipelineProfiler.enabled() ? System.nanoTime() : 0L;
                         VideoFrame converted = converter.convert(ndiFrame, targetWidth, targetHeight);
                         if (startNanos != 0L) {
@@ -181,5 +183,26 @@ public final class NdiVideoSource implements VideoSource {
         }
         long minIntervalMs = Math.max(1L, 1000L / maxFramesPerSecond);
         return nowMs - lastConvertedFrameMs >= minIntervalMs;
+    }
+
+    private static String frameInfo(DevolayVideoFrame frame, int targetWidth, int targetHeight) {
+        int frameRateN = frame.getFrameRateN();
+        int frameRateD = frame.getFrameRateD();
+        String frameRate = frameRateD == 0
+                ? "unknown"
+                : String.format(Locale.ROOT, "%.2f", frameRateN / (double) frameRateD);
+        return frame.getFourCCType()
+                + " "
+                + frame.getXResolution()
+                + "x"
+                + frame.getYResolution()
+                + "@"
+                + frameRate
+                + " stride="
+                + frame.getLineStride()
+                + " target="
+                + targetWidth
+                + "x"
+                + targetHeight;
     }
 }

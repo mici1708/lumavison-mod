@@ -6,6 +6,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Aggregated client-side timings for the dynamic video pipeline.
@@ -23,6 +24,7 @@ public final class VideoPipelineProfiler {
     private static final AtomicLong frameHashNanos = new AtomicLong();
     private static final AtomicLong skippedUploadTicks = new AtomicLong();
     private static final AtomicLong skippedDuplicateFrames = new AtomicLong();
+    private static final AtomicReference<String> lastNdiFrameInfo = new AtomicReference<>("-");
 
     private static long lastReportMs = System.currentTimeMillis();
 
@@ -39,6 +41,12 @@ public final class VideoPipelineProfiler {
         }
         ndiConversions.incrementAndGet();
         ndiConversionNanos.addAndGet(nanos);
+    }
+
+    public static void recordNdiFrameInfo(String frameInfo) {
+        if (enabled()) {
+            lastNdiFrameInfo.set(frameInfo);
+        }
     }
 
     public static void recordTextureUpload(long nanos) {
@@ -97,9 +105,10 @@ public final class VideoPipelineProfiler {
         long hashNanos = frameHashNanos.getAndSet(0);
         long skippedTicks = skippedUploadTicks.getAndSet(0);
         long skippedDuplicates = skippedDuplicateFrames.getAndSet(0);
+        String ndiFrameInfo = lastNdiFrameInfo.get();
 
         LumaVisionMod.LOGGER.info(
-                "LumaVision video profile: screens={}, sharedTextures={}, sharedRefs={}, ndi={} avg={}ms, uploads={} avg={}ms, grading={} avg={}ms, hash={} avg={}ms, skippedTicks={}, skippedDuplicates={}",
+                "LumaVision video profile: screens={}, sharedTextures={}, sharedRefs={}, ndi={} avg={}ms, uploads={} avg={}ms, grading={} avg={}ms, hash={} avg={}ms, skippedTicks={}, skippedDuplicates={}, ndiFrame={}",
                 screenPipelines,
                 sharedTextures,
                 sharedTextureReferences,
@@ -112,7 +121,8 @@ public final class VideoPipelineProfiler {
                 hashCount,
                 averageMs(hashNanos, hashCount),
                 skippedTicks,
-                skippedDuplicates
+                skippedDuplicates,
+                ndiFrameInfo
         );
     }
 
